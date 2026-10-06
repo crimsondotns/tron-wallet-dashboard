@@ -681,6 +681,9 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp
 const TYPE_COLOR = { EXCHANGE: '#f0b90b', DEX: '#b06dff', CONTRACT: '#20c9c9', PERSON: '#727272' };
 const TYPE_TH = new Proxy({}, { get: (o, k) => L('t_' + String(k).toLowerCase()) });
 const typeOf = a => (RAW.book && RAW.book[a] && RAW.book[a].type) || 'PERSON';
+/* Exchange / DEX มีคนใช้ร่วมกันจำนวนมาก การที่หลาย wallet ไปแตะจึงไม่ได้แปลว่าเกี่ยวข้องกัน: ไม่นับเป็นตัวเชื่อม */
+const HUB_TYPES = new Set(['EXCHANGE', 'DEX']);
+const isLinker = c => !!c && c.wallets.size > 1 && !HUB_TYPES.has(typeOf(c.addr));
 /* ป้ายประเภท: พื้นเทา (คน) ใช้ตัวอักษรขาวให้อ่านชัด ประเภทอื่นพื้นสว่างใช้ตัวอักษรดำ */
 const badgeStyle = t => `background:${TYPE_COLOR[t]};color:${t === 'PERSON' ? '#ffffff' : '#101010'}`;
 const badge = a => { const t = typeOf(a); return `<span class="badge" style="${badgeStyle(t)}">${TYPE_TH[t]}</span>`; };
@@ -857,7 +860,7 @@ function filtered() {
   const tracked = new Set(RAW.wallets.map(w => w.address));
   const direct = base.filter(t => t.from === selWallet || t.to === selWallet);
   const cps = new Set();
-  direct.forEach(t => { const o = t.from === selWallet ? t.to : t.from; if (!tracked.has(o)) cps.add(o); });
+  direct.forEach(t => { const o = t.from === selWallet ? t.to : t.from; if (!tracked.has(o) && !HUB_TYPES.has(typeOf(o))) cps.add(o); });
   const indirect = base.filter(t => !(t.from === selWallet || t.to === selWallet) &&
     ((tracked.has(t.from) && cps.has(t.to)) || (tracked.has(t.to) && cps.has(t.from))));
   indirect.forEach(t => t._indirect = true);
@@ -953,7 +956,7 @@ function renderInner() {
 
   /* ----- KPI ----- */
   const totIn = ws.reduce((s, w) => s + w.in, 0), totOut = ws.reduce((s, w) => s + w.out, 0);
-  const shared = [...cp.values()].filter(c => c.wallets.size > 1).length;
+  const shared = [...cp.values()].filter(isLinker).length;
   $('kpis').innerHTML = [
     [L('k_tracked'), RAW.wallets.length],
     [L('k_count'), txs.filter(t => !t._indirect).length],
@@ -993,10 +996,10 @@ function renderInner() {
   const fType = $('fType').value;
   const cpList = [...cp.values()].filter(c => !fType || typeOf(c.addr) === fType).sort((a, b) => (b.in + b.out) - (a.in + a.out));
   const topSet = new Set(cpList.slice(0, topN).map(c => c.addr));
-  cpList.filter(c => c.wallets.size > 1).forEach(c => topSet.add(c.addr)); /* คู่ค้าร่วมแสดงเสมอ */
+  cpList.filter(isLinker).forEach(c => topSet.add(c.addr)); /* คู่ค้าร่วมแสดงเสมอ */
   $('tblCp').innerHTML = `<tr><th>${L('th_cp')}</th><th>${L('th_type')}</th><th class="num">${L('th_recv')}</th><th class="num">${L('th_sent')}</th><th>${L('th_linked')}</th></tr>` +
     cpList.slice(0, 100).map(c => `<tr data-addr="${esc(c.addr)}" style="cursor:pointer">
-      <td class="addr"><span class="cp">${c.wallets.size > 1 ? icon('link', 'var(--orange)') : ''}<a href="${SCAN}address/${esc(c.addr)}" target="_blank">${esc(nameOf(c.addr))}</a><span class="copy" data-copy="${esc(c.addr)}" title="Copy address">${icon('copy')}</span></span></td>
+      <td class="addr"><span class="cp">${isLinker(c) ? icon('link', 'var(--orange)') : ''}<a href="${SCAN}address/${esc(c.addr)}" target="_blank">${esc(nameOf(c.addr))}</a><span class="copy" data-copy="${esc(c.addr)}" title="Copy address">${icon('copy')}</span></span></td>
       <td>${badge(c.addr)}</td>
       <td class="num out">${fmt(c.in)}</td><td class="num in">${fmt(c.out)}</td>
       <td>${esc([...c.wallets].join(', '))}</td></tr>`).join('');
@@ -1017,7 +1020,7 @@ function renderInner() {
   const maxAmt = Math.max(1, ...[...edges.values()].map(e => e.amount));
 
   const nodes = [...nodeIds].map(a => {
-    const isT = tracked.has(a), c = cp.get(a), multi = c && c.wallets.size > 1, t = typeOf(a);
+    const isT = tracked.has(a), c = cp.get(a), multi = isLinker(c), t = typeOf(a);
     /* Wallet ที่ติดตาม = กล่องขาว ตัวดำ · ตอนเลือกแท็บ wallet ตัวอื่นเป็นแบบขอบขาว (พื้นดำ ตัวขาว) */
     const outline = isT && selWallet && a !== selWallet;
     const color = isT ? (outline ? '#121212' : '#ffffff') : TYPE_COLOR[t];
