@@ -274,7 +274,8 @@
     <h2><span data-i18n="graph_title">ความเชื่อมโยงของกระแสเงิน</span>
       <span><span class="muted" id="graphInfo"></span>
         <span class="muted hint" style="margin-left:8px" data-i18n="graph_hint">scroll = ซูม · คลิกลาก = เลื่อน</span>
-        <button id="btnFit" class="ghost" data-i18n-title="reset_title" title="Reset Zoom ให้เห็นทั้งกราฟ (ดับเบิลคลิกพื้นที่ว่าง หรือกด 0)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Reset Zoom</button></span></h2>
+        <button id="btnFit" class="ghost" data-i18n-title="reset_title" title="Reset Zoom ให้เห็นทั้งกราฟ (ดับเบิลคลิกพื้นที่ว่าง หรือกด 0)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Reset Zoom</button>
+        <button id="btnShot" class="ghost" data-i18n-title="shot_title" title="บันทึกภาพกราฟเป็นไฟล์ PNG"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> <span data-i18n="shot">Screenshot</span></button></span></h2>
     <div id="graphWrap">
       <div id="graph"></div>
       <div id="loader" class="on"><div class="box"><div class="spin"></div><span id="loaderText">กำลังโหลดข้อมูล…</span></div></div>
@@ -463,6 +464,7 @@ const I18N = {
     f_min: 'ขั้นต่ำ', f_type: 'ประเภท', f_top: 'คู่ค้าสูงสุด', reload: 'โหลดใหม่',
     log_title: 'ดูขั้นตอนการโหลดและ error', log_head: 'Log การโหลด',
     graph_title: 'ความเชื่อมโยงของกระแสเงิน', graph_hint: 'scroll = ซูม · คลิกลาก = เลื่อน',
+    shot: 'Screenshot', shot_title: 'บันทึกภาพกราฟเป็นไฟล์ PNG', shot_done: 'บันทึกภาพแล้ว', shot_none: 'ยังไม่มีกราฟให้บันทึก',
     reset_title: 'Reset Zoom ให้เห็นทั้งกราฟ (ดับเบิลคลิกพื้นที่ว่าง หรือกด 0)',
     close: 'ปิด', name_ph: 'ตั้งชื่อ เช่น Binance Deposit', save_book: 'บันทึกลง AddressBook',
     t_person: 'คน', t_exchange: 'Exchange', t_dex: 'DEX', t_contract: 'Contract',
@@ -547,6 +549,7 @@ const I18N = {
     f_min: 'Min amount', f_type: 'Type', f_top: 'Max counterparties', reload: 'Reload',
     log_title: 'View loading steps and errors', log_head: 'Loading log',
     graph_title: 'Fund flow network', graph_hint: 'scroll = zoom · drag = pan',
+    shot: 'Screenshot', shot_title: 'Save the graph as a PNG image', shot_done: 'Image saved', shot_none: 'No graph to capture yet',
     reset_title: 'Fit the whole graph (double-click empty space or press 0)',
     close: 'Close', name_ph: 'Name, e.g. Binance Deposit', save_book: 'Save to AddressBook',
     t_person: 'Person', t_exchange: 'Exchange', t_dex: 'DEX', t_contract: 'Contract',
@@ -1344,6 +1347,43 @@ $('btnLog').onclick = () => $('log').classList.toggle('open');
 $('btnLogClose').onclick = () => $('log').classList.remove('open');
 function resetZoom() { if (network) network.fit({ animation: false }); }
 $('btnFit').onclick = resetZoom;
+
+/* Screenshot: วาดกราฟ (canvas ของ vis-network) ลงภาพใหม่ พร้อมแถบหัวบอกตัวกรองที่ใช้อยู่ แล้วดาวน์โหลดเป็น PNG */
+$('btnShot').onclick = () => {
+  const src = document.querySelector('#graph canvas');
+  if (!src || !src.width) { toast(L('shot_none'), true); return; }
+  const dpr = src.width / src.clientWidth || 1;
+  const pad = 24 * dpr, headH = 72 * dpr;
+  const out = document.createElement('canvas');
+  out.width = src.width; out.height = src.height + headH;
+  const g = out.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const font = css.getPropertyValue('--font-ui').trim() || 'sans-serif';
+  g.fillStyle = css.getPropertyValue('--background-highlight').trim() || '#1f1f1f';
+  g.fillRect(0, 0, out.width, out.height);
+  const fd = $('fDays'), fType = $('fType');
+  const wallet = selWallet ? (RAW.wallets.find(w => w.address === selWallet) || {}).label : L('all');
+  const parts = [$('fToken').value, fd.options[fd.selectedIndex].text, 'Wallet ' + wallet];
+  if (fType.value) parts.push(fType.options[fType.selectedIndex].text);
+  if (focusAddr) parts.push(L('filter_lbl') + ' ' + exportCtx.nameOf(focusAddr));
+  g.textBaseline = 'top';
+  g.fillStyle = '#ffffff';
+  g.font = `700 ${20 * dpr}px ${font}`;
+  g.fillText('Tron Wallet Dashboard', pad, 16 * dpr);
+  g.fillStyle = '#b3b3b3';
+  g.font = `400 ${14 * dpr}px ${font}`;
+  g.fillText(parts.join('  ·  ') + '  ·  ' + fmtDate(Date.now()), pad, 44 * dpr);
+  g.drawImage(src, 0, headH);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+  out.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = `tron-graph-${$('fToken').value}-${stamp}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast(L('shot_done'));
+  }, 'image/png');
+};
 /* กด 0 หรือ F = Reset Zoom (ยกเว้นตอนพิมพ์ในช่อง input) */
 document.addEventListener('keydown', e => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.metaKey || e.ctrlKey) return;
