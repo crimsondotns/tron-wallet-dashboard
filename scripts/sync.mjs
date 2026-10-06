@@ -102,8 +102,15 @@ async function writeJson(file, obj, pretty) {
 // ---------- main ----------
 async function main() {
   // 1) รายชื่อ wallet + AddressBook จาก Google Sheet (ผ่าน GAS Web App)
-  const cfgRes = await fetch(`${GAS_URL}?action=config`, { redirect: 'follow' });
-  if (!cfgRes.ok) throw new Error(`อ่าน config จาก GAS ไม่ได้: HTTP ${cfgRes.status}`);
+  // GAS ตอบ 404/5xx ชั่วคราวได้บ้าง จึงลองใหม่ก่อนยอมแพ้
+  let cfgRes;
+  for (let i = 0; i < 4; i++) {
+    cfgRes = await fetch(`${GAS_URL.trim()}?action=config`, { redirect: 'follow' }).catch(e => ({ ok: false, status: e.message }));
+    if (cfgRes.ok) break;
+    log(`GAS config HTTP ${cfgRes.status} ลองใหม่ ${i + 1}/4`);
+    await sleep(5000 * (i + 1));
+  }
+  if (!cfgRes.ok) throw new Error(`อ่าน config จาก GAS ไม่ได้: HTTP ${cfgRes.status} (ตรวจ GAS_URL = ${GAS_URL.trim().slice(0, 45)}… ต้องลงท้าย /exec และ deployment ยังไม่ถูกลบ)`);
   const cfg = await cfgRes.json().catch(() => { throw new Error('GAS ไม่ได้ตอบเป็น JSON: ตรวจว่า Deploy เป็น Web App (Anyone) และ code.gs เป็นเวอร์ชันล่าสุด'); });
   const wallets = (cfg.wallets || []).filter(w => /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(w.address));
   log(`wallets=${wallets.length}, addressBook=${Object.keys(cfg.book || {}).length}`);
