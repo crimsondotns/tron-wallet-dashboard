@@ -503,7 +503,7 @@ const I18N = {
     diag_winvalid: (n, l) => `[Server] ชีต Wallet: address ไม่ถูกต้อง ${n} แถว ไม่ถูกติดตาม: ${l}`,
     diag_wdup: (n, l) => `[Server] ชีต Wallet: address ซ้ำ ${n} แถว: ${l}`,
     diag_wblank: n => `[Server] ชีต Wallet: แถวไม่มี address ${n} แถว`,
-    fn_cut: (label, n) => `${label} ตัด ${n}`, fn_days: d => `ช่วง ${d} วัน`, fn_range: 'ช่วงเวลา',
+    fn_cut: (label, n) => `${label} ตัด ${n}`, fn_days: d => `ช่วง ${d} วัน`, fn_year: y => `ปี ${y}`, year: y => `ปี ${y}`, fn_range: 'ช่วงเวลา',
     fn_min: m => `ขั้นต่ำ ${m}`, fn_tab: n => `แท็บ wallet ตัด ${n}`,
     fn_total: (t, steps, left) => `[ตัวกรอง] ทั้งหมด ${t} → ${steps}เหลือ ${left}`,
     fn_others: s => `[ตัวกรอง] token อื่นที่ไม่ได้แสดง: ${s}`,
@@ -587,7 +587,7 @@ const I18N = {
     diag_winvalid: (n, l) => `[Server] Wallet sheet: ${n} invalid addresses, not tracked: ${l}`,
     diag_wdup: (n, l) => `[Server] Wallet sheet: ${n} duplicate addresses: ${l}`,
     diag_wblank: n => `[Server] Wallet sheet: ${n} rows without an address`,
-    fn_cut: (label, n) => `${label} removed ${n}`, fn_days: d => `last ${d} days`, fn_range: 'Period',
+    fn_cut: (label, n) => `${label} removed ${n}`, fn_days: d => `last ${d} days`, fn_year: y => `year ${y}`, year: y => `Year ${y}`, fn_range: 'Period',
     fn_min: m => `Min ${m}`, fn_tab: n => `Wallet tab removed ${n}`,
     fn_total: (t, steps, left) => `[Filters] Total ${t} → ${steps}remaining ${left}`,
     fn_others: s => `[Filters] Other tokens not shown: ${s}`,
@@ -642,6 +642,7 @@ function applyLang(lang) {
   document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = L(el.dataset.i18nTitle); });
   document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = L(el.dataset.i18nPh); });
   document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', L(el.dataset.i18nAria)); });
+  document.querySelectorAll('option[data-year]').forEach(o => { o.textContent = L('year', o.value.slice(2)); });
   document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('on', b.dataset.lang === LANG));
   if (statusFn) $('status').textContent = statusFn();
   if (RAW.txs.length) { hideCard(); render(); }
@@ -781,6 +782,7 @@ function load() {
       const dup = d.txs.length - RAW.txs.length;
       if (dup) dlog(L('dup', dup));
       buildTokenFilter();
+      buildYearFilter();
       /* ถ้าช่วงเวลาที่เลือกไม่มีรายการเลย ให้สลับเป็น "ทั้งหมด" อัตโนมัติ */
       if (RAW.txs.length && !filtered().length && $('fDays').value !== '0') {
         $('fDays').value = '0';
@@ -812,10 +814,29 @@ function buildTokenFilter() {
   $('fToken').value = tokens.includes(cur) ? cur : (tokens.includes('USDT') ? 'USDT' : tokens[0] || '');
 }
 
+/* ช่วงเวลาที่เลือก: จำนวนวันล่าสุด หรือทั้งปี (ค่า y:2025) */
+function rangeOf() {
+  const v = $('fDays').value;
+  if (v.startsWith('y:')) {
+    const y = +v.slice(2);
+    return { since: new Date(y, 0, 1).getTime(), until: new Date(y + 1, 0, 1).getTime(), days: 0, label: String(y) };
+  }
+  const days = +v;
+  return { since: days ? Date.now() - days * 864e5 : 0, until: Infinity, days, label: '' };
+}
+
+/* เติมตัวเลือกปีจากข้อมูลจริง (ใหม่สุดก่อน) */
+function buildYearFilter() {
+  const fd = $('fDays'), cur = fd.value;
+  fd.querySelectorAll('option[data-year]').forEach(o => o.remove());
+  const years = [...new Set(RAW.txs.map(t => new Date(t.ts).getFullYear()))].sort((a, b) => b - a);
+  years.forEach(y => { const o = document.createElement('option'); o.value = 'y:' + y; o.textContent = L('year', y); o.dataset.year = '1'; fd.appendChild(o); });
+  fd.value = [...fd.options].some(o => o.value === cur) ? cur : '0';
+}
+
 function baseFiltered() {
-  const token = $('fToken').value, days = +$('fDays').value, min = +$('fMin').value || 0;
-  const since = days ? Date.now() - days * 864e5 : 0;
-  return RAW.txs.filter(t => t.token === token && t.ts >= since && t.amount >= min);
+  const token = $('fToken').value, min = +$('fMin').value || 0, r = rangeOf();
+  return RAW.txs.filter(t => t.token === token && t.ts >= r.since && t.ts < r.until && t.amount >= min);
 }
 
 /* เมื่อเลือก wallet: เอารายการของ wallet นั้น + รายการของ wallet อื่นที่ไปแตะคู่ค้าเดียวกัน (indirect) */
@@ -864,16 +885,15 @@ function logServerDiag(g) {
 /* แสดงว่าตัวกรองแต่ละตัวตัดไปกี่รายการ (log เฉพาะเมื่อค่าตัวกรองเปลี่ยน) */
 let lastFunnelKey = '';
 function logFilterFunnel() {
-  const token = $('fToken').value, days = +$('fDays').value, min = +$('fMin').value || 0;
-  const key = [token, days, min, selWallet, $('fType').value, $('fTop').value, RAW.txs.length, LANG].join('|');
+  const token = $('fToken').value, min = +$('fMin').value || 0, r = rangeOf(), days = r.days;
+  const key = [token, $('fDays').value, min, selWallet, $('fType').value, $('fTop').value, RAW.txs.length, LANG].join('|');
   if (key === lastFunnelKey) return;
   lastFunnelKey = key;
-  const since = days ? Date.now() - days * 864e5 : 0;
   let cur = RAW.txs;
   const steps = [];
   const step = (label, fn) => { const next = cur.filter(fn); if (cur.length - next.length) steps.push(L('fn_cut', label, cur.length - next.length)); cur = next; };
   step(`Token=${token}`, t => t.token === token);
-  step(days ? L('fn_days', days) : L('fn_range'), t => t.ts >= since);
+  step(days ? L('fn_days', days) : r.label ? L('fn_year', r.label) : L('fn_range'), t => t.ts >= r.since && t.ts < r.until);
   step(L('fn_min', min), t => t.amount >= min);
   if (selWallet) {
     const n = filtered().filter(t => !t._indirect).length;
