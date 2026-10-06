@@ -159,6 +159,12 @@
     return p;
   }
 
+  /* ให้หน้าต่าง Export ถาม/บันทึกรหัสแก้ไขเองก่อนเปิดแท็บดาวน์โหลด */
+  window.dashKey = {
+    has: function () { try { return !!localStorage.getItem(KEY_STORE); } catch (e) { return false; } },
+    set: function (k) { try { localStorage.setItem(KEY_STORE, k); } catch (e) {} },
+  };
+
   /* ล็อกหน้าเว็บอีกครั้ง (ลบรหัสที่จำไว้) */
   window.dashLock = function () { forgetPass(); location.reload(); };
 

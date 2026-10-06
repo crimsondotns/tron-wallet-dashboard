@@ -199,6 +199,8 @@
   #xdlg .seg button:hover { color:#fff; background:transparent; }
   #xdlg .seg button[aria-pressed="true"] { background:#fff; color:#101010; }
   #xdlg .fld { flex-direction:column; align-items:stretch; gap:8px; font-size:12px; }
+  #xdlg input[type=password] { background:var(--background-base); width:100%; }
+  #xdlg input.bad { box-shadow:inset 0 0 0 1px var(--out); }
   #xdlg select, #xdlg input[type=date] { background:var(--background-base); color-scheme:dark; width:100%; }
   #xdlg .dates { display:flex; gap:8px; }
   #xdlg .chk { font-size:12px; cursor:pointer; }
@@ -340,6 +342,7 @@
     <label class="fld"><span data-i18n="xr_period">ช่วงเวลา</span><select id="xRangeSel"></select></label>
     <div class="dates"><input type="date" id="xFrom" data-i18n-aria="xr_from" aria-label="ตั้งแต่"><input type="date" id="xTo" data-i18n-aria="xr_to" aria-label="ถึง"></div>
     <label class="chk" id="xSkipWrap"><input type="checkbox" id="xSkip" checked> <span data-i18n="xr_skip">นับเฉพาะวันที่มีรายการ</span></label>
+    <label class="fld" id="xKeyWrap" hidden><span data-i18n="xr_key">รหัสแก้ไข (EDIT_KEY)</span><input type="password" id="xKey" autocomplete="off" data-i18n-ph="xr_key_ph" placeholder="ใส่ครั้งเดียว เครื่องนี้จะจำไว้"></label>
     <div class="sum" id="xPreview" aria-live="polite"></div>
     <div class="actions"><button type="button" class="ghost" id="xCancel" data-i18n="cancel">ยกเลิก</button>
       <button type="button" class="primary" id="xGo">Export</button></div>
@@ -536,7 +539,7 @@ const I18N = {
     xr_capped: 'Dashboard โหลดเฉพาะ 5,000 แถวล่าสุด รายการที่เก่ากว่านั้นจะไม่อยู่ในไฟล์',
     xr_swapped: 'วันที่เริ่มอยู่หลังวันที่สิ้นสุด จึงสลับให้', xr_nodate: 'เลือกวันที่ให้ครบทั้ง 2 ช่อง',
     xr_big: n => `มี ${n} รายการ ไฟล์ PDF จะยาวหลายหน้า ถ้าจะเอาไปใช้ต่อ แนะนำ Excel`,
-    xr_period: 'ช่วงเวลา', xr_view_now: 'ตามที่แสดงอยู่ตอนนี้', xr_last1: 'วันล่าสุด', xr_lastN: n => `${n} วันล่าสุด`,
+    xr_period: 'ช่วงเวลา', xr_key: 'รหัสแก้ไข (EDIT_KEY)', xr_key_ph: 'ใส่ครั้งเดียว เครื่องนี้จะจำไว้', xr_view_now: 'ตามที่แสดงอยู่ตอนนี้', xr_last1: 'วันล่าสุด', xr_lastN: n => `${n} วันล่าสุด`,
     xr_months: 'รายเดือน', xr_custom2: 'กำหนดเอง…', xr_skip: 'นับเฉพาะวันที่มีรายการ', xr_count: n => `${n} รายการ`,
     xr_daysN: n => `${n} วัน`, xr_activeN: n => `${n} วันที่มีรายการ`,
     xr_wallet: w => `Wallet ${w}`, xr_node: n => `เฉพาะ ${n}`,
@@ -621,7 +624,7 @@ const I18N = {
     xr_capped: 'The dashboard loads only the latest 5,000 rows; older transactions will not be in the file',
     xr_swapped: 'The start date was after the end date, so they were swapped', xr_nodate: 'Pick both dates',
     xr_big: n => `${n} transactions: the PDF will run to many pages. Excel is better for further use.`,
-    xr_period: 'Period', xr_view_now: 'Current view', xr_last1: 'Latest day', xr_lastN: n => `Last ${n} days`,
+    xr_period: 'Period', xr_key: 'Edit key (EDIT_KEY)', xr_key_ph: 'Enter once; this device remembers it', xr_view_now: 'Current view', xr_last1: 'Latest day', xr_lastN: n => `Last ${n} days`,
     xr_months: 'By month', xr_custom2: 'Custom…', xr_skip: 'Count only days with transactions', xr_count: n => `${n} transactions`,
     xr_daysN: n => `${n} days`, xr_activeN: n => `${n} days with transactions`,
     xr_wallet: w => `Wallet ${w}`, xr_node: n => `Only ${n}`,
@@ -1211,6 +1214,8 @@ function renderExportDlg() {
     notes.map(([msg, cls]) => `<span class="note ${cls}">${esc(msg)}</span>`).join('');
   $('xGo').textContent = L('xr_go', xs.fmt === 'pdf' ? 'PDF' : 'Excel');
   $('xGo').disabled = !list.length;
+  /* GitHub Pages: ถามรหัสแก้ไขในหน้าต่างนี้ (ถามหลังเปิดแท็บดาวน์โหลด Chrome จะปิด prompt เองแล้ว Export ล้ม) */
+  $('xKeyWrap').hidden = !(window.dashKey && !window.dashKey.has());
 }
 
 function openExport(format) {
@@ -1343,6 +1348,12 @@ $('xdlg').addEventListener('click', e => { if (e.target === $('xdlg')) closeExpo
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('xdlg').classList.contains('open')) closeExport(); });
 $('xGo').onclick = () => {
   if (!xResult || !xResult.list.length) return;
+  if (!$('xKeyWrap').hidden) {
+    const k = $('xKey').value.trim();
+    if (!k) { $('xKey').classList.add('bad'); $('xKey').focus(); return; }
+    window.dashKey.set(k);
+    $('xKey').value = ''; $('xKey').classList.remove('bad');
+  }
   closeExport();
   exportTx(xs.fmt, xResult.list, xResult.label);
 };
