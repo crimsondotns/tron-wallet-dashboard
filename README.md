@@ -16,13 +16,15 @@ GitHub Actions (ทุก 10 นาที) ── ดึงจาก Tronscan �
 | `gas/Code.gs` | โค้ดฝั่ง Google Apps Script: ส่งรายชื่อ wallet, บันทึก AddressBook, Export .xlsx/PDF |
 | `data/state.json` | ตำแหน่งที่ดึงถึงแล้วของแต่ละ wallet (ให้รอบถัดไปทำต่อ) |
 
-> **ข้อมูลเป็นสาธารณะ:** GitHub Pages เปิดให้ทุกคนที่มีลิงก์เห็นรายการ ชื่อ wallet และ AddressBook ทั้งหมด
+> **รหัสผ่าน:** ตั้ง Secret `DASH_PASSWORD` แล้วข้อมูลทั้งหมด (`site/data/dashboard.bin`, `data/state.bin`) จะถูกเข้ารหัส AES-256-GCM ก่อน commit/ขึ้นเว็บ หน้าเว็บจะถามรหัสก่อนแสดง ถ้าไม่ตั้ง ข้อมูลจะเป็น JSON ธรรมดาที่ทุกคนอ่านได้
+> เปลี่ยนรหัส: แก้ Secret แล้วลบ `site/data/dashboard.bin` + `data/state.bin` ออกจาก repo (รอบถัดไปจะดึงใหม่ทั้งหมด) เพราะไฟล์เดิมเข้ารหัสด้วยรหัสเก่า
 
 ## ติดตั้ง
 
 ### 1. Google Apps Script
 1. เปิดโปรเจกต์ GAS เดิม วางโค้ดจาก `gas/Code.gs` ทับ `code.gs` (ใส่ API key จริงที่บรรทัด `setProperty('TRONSCAN_API_KEY', …)` เฉพาะใน GAS ห้าม commit)
 2. **Project Settings → Script Properties → Add**: `EDIT_KEY` = รหัสที่ตั้งเอง (ใช้ตอนตั้งชื่อ address / Export จากหน้าเว็บ)
+   และ `READ_KEY` = รหัสอีกตัว (ใช้ให้ GitHub Actions อ่านรายชื่อ wallet)
 3. **Deploy → New deployment → Web app**
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -33,6 +35,8 @@ GitHub Actions (ทุก 10 นาที) ── ดึงจาก Tronscan �
 1. สร้าง repo ใหม่ (Public) แล้ว push โฟลเดอร์นี้ขึ้นไป
 2. **Settings → Secrets and variables → Actions**
    - Secrets: `TRONSCAN_API_KEY` = API key ของ Tronscan
+   - Secrets: `DASH_PASSWORD` = รหัสผ่านเข้าหน้าเว็บ
+   - Secrets: `GAS_READ_KEY` = ค่าเดียวกับ `READ_KEY` ใน Script Properties ของ GAS (กันคนอื่นเรียก `?action=config` ดูรายชื่อ wallet)
    - Variables: `GAS_URL` = URL `/exec` จากขั้นตอน 1.3
 3. **Settings → Pages → Source: GitHub Actions**
 4. แก้ `site/config.js` ใส่ `gasUrl` = URL `/exec` เดียวกัน แล้ว commit

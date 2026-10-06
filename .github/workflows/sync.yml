@@ -36,13 +36,15 @@ jobs:
         env:
           TRONSCAN_API_KEY: ${{ secrets.TRONSCAN_API_KEY }}
           GAS_URL: ${{ vars.GAS_URL }}
+          GAS_READ_KEY: ${{ secrets.GAS_READ_KEY }}
+          DASH_PASSWORD: ${{ secrets.DASH_PASSWORD }}
           SYNC_BUDGET_MIN: '25'
 
       - name: Commit data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site/data/dashboard.json data/state.json
+          git add -A site/data data
           if git diff --cached --quiet; then echo "no changes"; else
             git commit -m "data: sync $(date -u +'%Y-%m-%d %H:%M')"
             git pull --rebase --autostash

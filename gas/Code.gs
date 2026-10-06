@@ -486,6 +486,9 @@ function showDashboard() {
 // ?action=config = ส่งรายชื่อ wallet + AddressBook ให้ GitHub Actions (scripts/sync.mjs)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'config') {
+    /* ตั้ง READ_KEY ใน Script Properties แล้ว ต้องส่ง &key= ให้ตรง (ใส่ค่าเดียวกันใน GitHub Secret GAS_READ_KEY) */
+    const readKey = PropertiesService.getScriptProperties().getProperty('READ_KEY');
+    if (readKey && e.parameter.key !== readKey) return jsonOut_({ error: 'bad_key' });
     const book = {};
     getBook_().forEach((v, k) => { book[k] = { name: v.name, type: v.type, source: v.source }; });
     return jsonOut_({ wallets: getWallets_().map(w => ({ label: w.label, address: w.address })), book });

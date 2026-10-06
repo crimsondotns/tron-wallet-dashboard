@@ -8,16 +8,21 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 
 const KEY = process.env.TRONSCAN_API_KEY;
 const GAS_URL = process.env.GAS_URL;
+const GAS_READ_KEY = process.env.GAS_READ_KEY || '';
+// ตั้ง DASH_PASSWORD แล้วข้อมูลที่ขึ้นเว็บ/commit จะถูกเข้ารหัส (AES-256-GCM) อ่านได้เฉพาะคนที่มีรหัส
+const PASS = process.env.DASH_PASSWORD || '';
 const BUDGET_MS = (Number(process.env.SYNC_BUDGET_MIN) || 25) * 60 * 1000;
 const CLASSIFY_MAX = Number(process.env.CLASSIFY_MAX) || 150;
 const BASE = process.env.TRONSCAN_BASE || 'https://apilist.tronscanapi.com/api';
 const PAGE = 50;
 const API_GAP_MS = 250;
-const OUT_FILE = 'site/data/dashboard.json';
-const STATE_FILE = 'data/state.json';
+const OUT_FILE = 'site/data/dashboard';
+const STATE_FILE = 'data/state';
 const EXCHANGE_RE = /binance|okx|okex|huobi|htx|bybit|kucoin|gate\.?io|bitget|mexc|kraken|poloniex|bitfinex|coinbase|crypto\.com|bitkub|upbit|bithumb|hotbit|bingx|whitebit|exchange|hot ?wallet|deposit/i;
 const DEX_RE = /sunswap|justswap|sun\.io|sunio|uniswap|pancake|swap|router|dex|liquidity|pool|lp token|curve|sunpump/i;
 
@@ -91,12 +96,42 @@ async function classify(address) {
 }
 
 // ---------- ไฟล์ ----------
-async function readJson(file, fallback) {
-  try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return fallback; }
+// ไฟล์เข้ารหัส: "TWD1" + salt(16) + iv(12) + AES-256-GCM(gzip(JSON)) + tag(16)  ตรงกับฝั่งเว็บ (site/gas-shim.js)
+const MAGIC = Buffer.from('TWD1');
+const ITER = 310000;
+const deriveKey = salt => crypto.pbkdf2Sync(PASS, salt, ITER, 32, 'sha256');
+function encrypt(obj) {
+  const salt = crypto.randomBytes(16), iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', deriveKey(salt), iv);
+  const body = Buffer.concat([c.update(zlib.gzipSync(JSON.stringify(obj))), c.final(), c.getAuthTag()]);
+  return Buffer.concat([MAGIC, salt, iv, body]);
 }
-async function writeJson(file, obj, pretty) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify(obj, null, pretty ? 2 : 0) + '\n');
+function decrypt(buf) {
+  if (!buf.subarray(0, 4).equals(MAGIC)) throw new Error('ไฟล์เข้ารหัสไม่ถูกรูปแบบ');
+  const salt = buf.subarray(4, 20), iv = buf.subarray(20, 32), body = buf.subarray(32);
+  const d = crypto.createDecipheriv('aes-256-gcm', deriveKey(salt), iv);
+  d.setAuthTag(body.subarray(body.length - 16));
+  return JSON.parse(zlib.gunzipSync(Buffer.concat([d.update(body.subarray(0, body.length - 16)), d.final()])));
+}
+
+/* base = path ไม่มีนามสกุล: มีรหัสใช้ base.bin (เข้ารหัส) ไม่มีรหัสใช้ base.json */
+async function readData(base, fallback) {
+  try {
+    const bin = await fs.readFile(base + '.bin');
+    if (!PASS) throw new Error(`พบ ${base}.bin แต่ไม่ได้ตั้ง DASH_PASSWORD`);
+    try { return decrypt(bin); } catch (e) { throw new Error(`ถอดรหัส ${base}.bin ไม่ได้ (DASH_PASSWORD ไม่ตรงกับตอนเข้ารหัส?): ${e.message}`); }
+  } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  try { return JSON.parse(await fs.readFile(base + '.json', 'utf8')); } catch { return fallback; }
+}
+async function writeData(base, obj, pretty) {
+  await fs.mkdir(path.dirname(base), { recursive: true });
+  if (PASS) {
+    await fs.writeFile(base + '.bin', encrypt(obj));
+    await fs.rm(base + '.json', { force: true });
+  } else {
+    await fs.writeFile(base + '.json', JSON.stringify(obj, null, pretty ? 2 : 0) + '\n');
+    await fs.rm(base + '.bin', { force: true });
+  }
 }
 
 // ---------- main ----------
@@ -105,19 +140,20 @@ async function main() {
   // GAS ตอบ 404/5xx ชั่วคราวได้บ้าง จึงลองใหม่ก่อนยอมแพ้
   let cfgRes;
   for (let i = 0; i < 4; i++) {
-    cfgRes = await fetch(`${GAS_URL.trim()}?action=config`, { redirect: 'follow' }).catch(e => ({ ok: false, status: e.message }));
+    cfgRes = await fetch(`${GAS_URL.trim()}?action=config&key=${encodeURIComponent(GAS_READ_KEY)}`, { redirect: 'follow' }).catch(e => ({ ok: false, status: e.message }));
     if (cfgRes.ok) break;
     log(`GAS config HTTP ${cfgRes.status} ลองใหม่ ${i + 1}/4`);
     await sleep(5000 * (i + 1));
   }
   if (!cfgRes.ok) throw new Error(`อ่าน config จาก GAS ไม่ได้: HTTP ${cfgRes.status} (ตรวจ GAS_URL = ${GAS_URL.trim().slice(0, 45)}… ต้องลงท้าย /exec และ deployment ยังไม่ถูกลบ)`);
   const cfg = await cfgRes.json().catch(() => { throw new Error('GAS ไม่ได้ตอบเป็น JSON: ตรวจว่า Deploy เป็น Web App (Anyone) และ code.gs เป็นเวอร์ชันล่าสุด'); });
+  if (cfg.error === 'bad_key') throw new Error('GAS ปฏิเสธ: GAS_READ_KEY (GitHub Secret) ไม่ตรงกับ READ_KEY ใน Script Properties ของ GAS');
   const wallets = (cfg.wallets || []).filter(w => /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(w.address));
   log(`wallets=${wallets.length}, addressBook=${Object.keys(cfg.book || {}).length}`);
 
   // 2) ข้อมูลเดิม
-  const prev = await readJson(OUT_FILE, { txs: [] });
-  const state = await readJson(STATE_FILE, { wallets: {}, auto: {} });
+  const prev = await readData(OUT_FILE, { txs: [] });
+  const state = await readData(STATE_FILE, { wallets: {}, auto: {} });
   const txs = prev.txs || [];
   const keyOf = t => [t.wallet, t.hash, t.token, t.from, t.to, t.amount].join('|');
   const seen = new Set(txs.map(keyOf));
@@ -195,8 +231,8 @@ async function main() {
     badDateRows: [], noHashRows: [], zeroAmount: outTxs.filter(t => !(t.amount > 0)).length, blankRows: 0,
     walletInvalid: (cfg.wallets || []).filter(w => !tracked.has(w.address)).map(w => `${w.label}: ${w.address}`),
     walletDup: [], walletBlank: 0, backfillPending: pending, source: 'github' };
-  await writeJson(OUT_FILE, { wallets: wallets.map(w => ({ label: w.label, address: w.address })), txs: outTxs, book, diag, generatedAt: Date.now() });
-  await writeJson(STATE_FILE, state, true);
+  await writeData(OUT_FILE, { wallets: wallets.map(w => ({ label: w.label, address: w.address })), txs: outTxs, book, diag, generatedAt: Date.now() });
+  await writeData(STATE_FILE, state, true);
   log(`เสร็จ: เพิ่ม ${added} รายการ · รวม ${outTxs.length} · จัดประเภท ${classified}/${todo.length} · ` +
     (pending.length ? `ยังดึงย้อนหลังไม่ครบ: ${pending.join(', ')} (รอบหน้าทำต่อ)` : 'ประวัติครบทุก wallet'));
 }

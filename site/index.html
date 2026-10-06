@@ -262,6 +262,7 @@
     <button type="button" data-lang="th">TH</button><button type="button" data-lang="en">EN</button>
   </div>
   <button id="btnLog" class="ghost" data-i18n-title="log_title" title="ดูขั้นตอนการโหลดและ error"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg> Log</button>
+  <button id="btnLock" class="ghost" hidden onclick="window.dashLock()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> <span data-i18n="lock">ล็อก</span></button>
   <span class="muted hint" id="ver">v2026-10-06-17</span>
 </header>
 
@@ -503,7 +504,7 @@ const I18N = {
     diag_winvalid: (n, l) => `[Server] ชีต Wallet: address ไม่ถูกต้อง ${n} แถว ไม่ถูกติดตาม: ${l}`,
     diag_wdup: (n, l) => `[Server] ชีต Wallet: address ซ้ำ ${n} แถว: ${l}`,
     diag_wblank: n => `[Server] ชีต Wallet: แถวไม่มี address ${n} แถว`,
-    fn_cut: (label, n) => `${label} ตัด ${n}`, fn_days: d => `ช่วง ${d} วัน`, fn_year: y => `ปี ${y}`, year: y => `ปี ${y}`, since: y => `ตั้งแต่ปี ${y}`, fn_range: 'ช่วงเวลา',
+    fn_cut: (label, n) => `${label} ตัด ${n}`, fn_days: d => `ช่วง ${d} วัน`, fn_year: y => `ปี ${y}`, lock: 'ล็อก', year: y => `ปี ${y}`, since: y => `ตั้งแต่ปี ${y}`, fn_range: 'ช่วงเวลา',
     fn_min: m => `ขั้นต่ำ ${m}`, fn_tab: n => `แท็บ wallet ตัด ${n}`,
     fn_total: (t, steps, left) => `[ตัวกรอง] ทั้งหมด ${t} → ${steps}เหลือ ${left}`,
     fn_others: s => `[ตัวกรอง] token อื่นที่ไม่ได้แสดง: ${s}`,
@@ -587,7 +588,7 @@ const I18N = {
     diag_winvalid: (n, l) => `[Server] Wallet sheet: ${n} invalid addresses, not tracked: ${l}`,
     diag_wdup: (n, l) => `[Server] Wallet sheet: ${n} duplicate addresses: ${l}`,
     diag_wblank: n => `[Server] Wallet sheet: ${n} rows without an address`,
-    fn_cut: (label, n) => `${label} removed ${n}`, fn_days: d => `last ${d} days`, fn_year: y => `year ${y}`, year: y => `Year ${y}`, since: y => `Since ${y}`, fn_range: 'Period',
+    fn_cut: (label, n) => `${label} removed ${n}`, fn_days: d => `last ${d} days`, fn_year: y => `year ${y}`, lock: 'Lock', year: y => `Year ${y}`, since: y => `Since ${y}`, fn_range: 'Period',
     fn_min: m => `Min ${m}`, fn_tab: n => `Wallet tab removed ${n}`,
     fn_total: (t, steps, left) => `[Filters] Total ${t} → ${steps}remaining ${left}`,
     fn_others: s => `[Filters] Other tokens not shown: ${s}`,
