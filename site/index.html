@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tron Wallet Dashboard</title>
+<script src="config.js"></script>
+<script src="gas-shim.js"></script>
+<script>
+/* Log บนหน้าจอ: อยู่บนสุดของหน้า จึงจับ error ได้แม้สคริปต์หลักพัง */
+(function () {
+  var lang = 'th';
+  try { lang = localStorage.getItem('dash-lang') || 'th'; } catch (e) {}
+  window.LANG = lang === 'en' ? 'en' : 'th';
+  var EM = { th: { file: 'โหลดไฟล์ไม่ได้: ', line: ' (บรรทัด ', open: 'เปิดหน้าเว็บ' },
+             en: { file: 'Failed to load file: ', line: ' (line ', open: 'Page opened' } }[window.LANG];
+  var T0 = Date.now(), buf = [];
+  function box() { return document.getElementById('logList'); }
+  function flush() {
+    var b = box(); if (!b) return;
+    while (buf.length) b.appendChild(buf.shift());
+    b.scrollTop = b.scrollHeight;
+  }
+  window.dlog = function (msg, level) {
+    level = level || 'info';
+    var row = document.createElement('div');
+    row.className = 'log-row log-' + level;
+    var t = ((Date.now() - T0) / 1000).toFixed(1) + 's';
+    row.textContent = t + '  ' + msg;
+    buf.push(row); flush();
+    (level === 'error' ? console.error : level === 'warn' ? console.warn : console.log)('[Dashboard] ' + msg);
+    if (level === 'error') { var l = document.getElementById('log'); if (l) l.classList.add('open'); }
+  };
+  window.dlogFlush = flush;
+  /* ข้าม error จาก extension กระเป๋าเงิน (evmAsk, inpage ฯลฯ) */
+  var ext = /extension:|evmAsk|inpage\.js|contentScript/;
+  window.addEventListener('error', function (e) {
+    var src = (e.filename || '') + ' ' + ((e.error && e.error.stack) || '');
+    if (ext.test(src)) return;
+    if (e.target && e.target !== window && e.target.src) { dlog(EM.file + e.target.src, 'error'); return; }
+    dlog('JS error: ' + e.message + (e.lineno ? EM.line + e.lineno + ')' : ''), 'error');
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    dlog('Promise error: ' + ((e.reason && e.reason.message) || e.reason), 'error');
+  });
+  dlog(EM.open);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root {
+    --background-base:#121212; --background-highlight:#1f1f1f; --background-card:#292929;
+    --border-subtle:#535353; --text-base:#ffffff; --text-subdued:#b3b3b3; --text-placeholder:#777777;
+    --brand-green:#1ed760; --hover-gray:#727272; --focus-ring:rgba(255,255,255,.5);
+    --font-ui:"SpotifyMixUI","Helvetica Neue",helvetica,arial,"Noto Sans Thai",sans-serif;
+    --font-title:"SpotifyMixUITitle","Helvetica Neue",helvetica,arial,"Noto Sans Thai",sans-serif;
+    --radius-sm:4px; --radius-md:8px; --radius-pill:9999px;
+    --shadow-popover:rgba(0,0,0,.5) 0px 8px 24px 0px;
+    /* สีข้อมูล (data viz) — ใช้กับตัวเลขเข้า/ออก และประเภท node เท่านั้น */
+    --in:#57d98a; --out:#ff6b6b; --orange:#ffa53d; --tracked:#ffffff; --gray:#727272;
+    /* ชื่อเดิมที่ JS/inline style อ้างถึง */
+    --muted:var(--text-subdued); --text:var(--text-base);
+    --card:var(--background-highlight); --line:var(--background-card); --bg:var(--background-base);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:var(--font-ui); background:var(--background-base); color:var(--text-base);
+         font-size:14px; line-height:1.5; }
+  header { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:16px; align-items:center;
+           padding:16px 32px; background:var(--background-highlight); }
+  header h1 { font-family:var(--font-title); font-size:24px; line-height:1.2; font-weight:700; margin:0 16px 0 0; }
+  label { color:var(--text-subdued); display:flex; align-items:center; gap:8px; font-size:14px; }
+  select, input { background:var(--background-card); color:var(--text-base); border:1px solid transparent;
+                  border-radius:var(--radius-pill); padding:8px 16px; font:inherit; font-size:14px;
+                  transition:border-color .2s ease; }
+  select { padding-right:12px; cursor:pointer; }
+  /* ซ่อนปุ่มเพิ่ม/ลดของ input number */
+  input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  input::placeholder { color:var(--text-placeholder); }
+  select:focus, input:focus { outline:none; border-color:var(--border-subtle); box-shadow:inset 0 0 0 1px #fff; }
+  input[type=checkbox] { accent-color:var(--brand-green); }
+  button { font:inherit; font-size:14px; font-weight:700; line-height:1.2; cursor:pointer;
+           background:var(--background-card); color:var(--text-base); border:1px solid var(--text-placeholder);
+           border-radius:var(--radius-pill); padding:8px 24px; min-height:32px;
+           transition:background-color .2s ease, border-color .2s ease, transform .15s ease-out; }
+  button:hover { background:var(--border-subtle); border-color:var(--text-subdued); }
+  button:disabled { opacity:.5; cursor:default; }
+  button.primary { background:#fff; color:#101010; border:none; }
+  button.primary:hover { transform:scale(1.05); background:#fff; }
+  button.primary:active { background:#c5c5c5; transform:scale(1); }
+  button.ghost { background:transparent; border:none; color:var(--text-subdued); padding:8px 16px; }
+  button.ghost:hover { color:#fff; transform:scale(1.05); background:transparent; }
+  button.ghost:active { color:var(--text-placeholder); }
+  :focus-visible { outline:1px solid var(--focus-ring); outline-offset:2px; }
+  .muted { color:var(--text-subdued); }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:24px; padding:24px 32px; }
+  .kpi { background:var(--background-highlight); border-radius:var(--radius-md); padding:16px;
+         transition:background-color .3s ease; }
+  .kpi:hover { background:var(--background-card); }
+  .kpi .muted { font-size:12px; }
+  .kpi .v { font-family:var(--font-title); font-size:24px; line-height:1.2; font-weight:700; margin-top:8px;
+            font-variant-numeric:tabular-nums; }
+  .main { display:grid; grid-template-columns:2fr 1fr; gap:24px; padding:0 32px 48px; }
+  @media (max-width:992px){ .main { grid-template-columns:1fr; padding:0 16px 32px; }
+                            .kpis { padding:16px; } header { padding:16px; } .tabs { padding:16px 16px 0 !important; } }
+  .panel { background:var(--background-highlight); border-radius:var(--radius-md); overflow:hidden; }
+  .panel h2 { font-family:var(--font-ui); font-size:16px; line-height:1.4; font-weight:700; margin:0;
+              padding:16px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  #graph { height:560px; background:var(--background-base); cursor:grab; }
+  #graph:active { cursor:grabbing; }
+  .legend { display:flex; gap:8px 16px; padding:12px 16px; flex-wrap:wrap; font-size:12px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+  .dot.tw { width:20px; height:12px; border-radius:var(--radius-sm); background:var(--tracked); }
+  .scroll { max-height:560px; overflow:auto; }
+  table { width:100%; border-collapse:separate; border-spacing:0; font-size:14px; line-height:1.4; }
+  th, td { padding:8px 16px; text-align:left; white-space:nowrap; vertical-align:middle; }
+  /* หัวตารางติดบน: ต้องมี z-index + พื้นทึบ ไม่งั้นไอคอนที่มี opacity (สร้าง stacking context) จะทะลุขึ้นมา */
+  th { color:var(--text-subdued); font-weight:400; font-size:12px; line-height:1.5; position:sticky; top:0; z-index:2;
+       background:var(--background-highlight); box-shadow:inset 0 -1px 0 var(--background-card); }
+  tr[data-addr] { transition:background-color .2s ease; cursor:pointer; }
+  tr[data-addr]:hover td { background:var(--background-card); }
+  th.num, td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td .sub { display:block; font-size:12px; line-height:1.5; color:var(--text-subdued); }
+  .cp { display:inline-flex; align-items:center; gap:8px; vertical-align:middle; }
+  .in { color:var(--in); } .out { color:var(--out); }
+  a { color:#fff; text-decoration:none; border-bottom:1px solid transparent; transition:border-color .2s ease; }
+  a:hover { border-bottom-color:#fff; }
+  a:has(button) { border:none; }
+  .addr { font-family:ui-monospace,Menlo,monospace; font-size:12px; font-variant-numeric:tabular-nums; }
+  .badge { display:inline-block; vertical-align:middle; padding:0 8px; border-radius:var(--radius-pill); font-size:12px; font-weight:700;
+           line-height:20px; color:#101010; }
+  #graphWrap { position:relative; }
+  #card { position:absolute; top:16px; left:16px; width:360px; max-width:calc(100% - 32px);
+          background:var(--background-card); border-radius:var(--radius-md); padding:20px 24px;
+          display:none; z-index:6; box-shadow:var(--shadow-popover); }
+  #card #cardName { font-family:var(--font-title); font-size:16px; }
+  #card .full-addr { font-family:ui-monospace,Menlo,monospace; font-size:12px; word-break:break-all;
+                     user-select:all; background:var(--background-base); padding:8px 12px;
+                     border-radius:var(--radius-sm); margin:12px 0 8px; }
+  #card .row { display:flex; gap:8px; margin-top:12px; align-items:center; flex-wrap:wrap; }
+  #card input[type=text] { flex:1; min-width:0; background:var(--background-base); }
+  #card select { background:var(--background-base); }
+  #card .x { position:absolute; top:12px; right:12px; width:32px; height:32px; display:grid; place-items:center;
+             cursor:pointer; color:var(--text-subdued); border-radius:50%; transition:color .2s ease; }
+  #card .x:hover { color:#fff; }
+  .copy { display:inline-flex; cursor:pointer; color:var(--text-subdued); transition:color .2s ease; } .copy:hover { color:#fff; }
+  .copy .icon, .cp > .icon { vertical-align:middle; }
+  #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#fff; color:#101010;
+           padding:12px 24px; border-radius:var(--radius-pill); font-weight:700; display:none; z-index:9;
+           box-shadow:var(--shadow-popover); }
+  .tabs { display:flex; gap:8px; padding:24px 32px 0; overflow-x:auto; }
+  .tab { background:var(--background-card); border-radius:var(--radius-pill); padding:8px 16px; min-height:32px;
+         cursor:pointer; white-space:nowrap; color:var(--text-base); font-size:14px;
+         transition:background-color .2s ease; }
+  .tab:hover { background:var(--border-subtle); }
+  .tab b { font-weight:700; }
+  .tab .n { font-size:12px; margin-left:8px; color:var(--text-subdued); }
+  .tab.active { background:#fff; color:#101010; }
+  .tab.active .n { color:#535353; }
+  .tab.empty { opacity:.45; }
+  .full { grid-column:1 / -1; }
+  #status { margin-left:auto; font-size:12px; }
+  .icon { display:inline-block; vertical-align:-3px; flex-shrink:0; }
+  button .icon { margin-right:4px; vertical-align:-3px; }
+  #log { position:fixed; right:16px; bottom:16px; z-index:7; width:420px; max-width:calc(100vw - 32px);
+         background:var(--background-card); border-radius:var(--radius-md); box-shadow:var(--shadow-popover);
+         display:none; flex-direction:column; }
+  #log.open { display:flex; }
+  #log .log-head { display:flex; align-items:center; justify-content:space-between; padding:8px 8px 8px 16px; }
+  #log .log-head b { font-size:14px; }
+  #logList { max-height:260px; overflow:auto; padding:0 16px 12px; font-family:ui-monospace,Menlo,monospace;
+             font-size:12px; line-height:1.5; }
+  .log-row { padding:4px 0; color:var(--text-subdued); white-space:pre-wrap; word-break:break-word; }
+  .log-ok { color:var(--in); } .log-warn { color:var(--orange); } .log-error { color:var(--out); }
+  #loader { position:absolute; inset:0; display:none; place-items:center; z-index:4;
+            background:rgba(18,18,18,.85); }
+  #loader.on { display:grid; }
+  #loader .box { display:flex; flex-direction:column; align-items:center; gap:12px; color:var(--text-subdued); }
+  .spin { width:32px; height:32px; border-radius:50%; border:3px solid var(--background-card);
+          border-top-color:var(--brand-green); animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #graphWrap.loading { min-height:560px; }
+  .export { display:flex; align-items:center; gap:4px; }
+  .export a { font-size:12px; }
+  .lang { display:flex; gap:4px; padding:4px; background:var(--background-card); border-radius:var(--radius-pill); }
+  .lang button { background:transparent; border:none; color:var(--text-subdued); padding:8px 12px; font-size:12px; }
+  .lang button:hover { background:transparent; color:#fff; }
+  .lang button.on { background:#fff; color:#101010; }
+  #xdlg { position:fixed; inset:0; z-index:8; display:none; place-items:center; padding:16px; background:rgba(0,0,0,.6); }
+  #xdlg.open { display:grid; }
+  #xdlg [hidden] { display:none; }
+  #xdlg .box { width:400px; max-width:100%; max-height:calc(100vh - 32px); overflow:auto; background:var(--background-card);
+               border-radius:var(--radius-md); box-shadow:var(--shadow-popover); padding:24px; display:flex; flex-direction:column; gap:16px; }
+  #xdlg h3 { margin:0; font-size:20px; line-height:1.3; font-family:var(--font-title); }
+  #xdlg .scope { color:var(--text-subdued); font-size:12px; }
+  #xdlg .seg { display:flex; gap:4px; padding:4px; background:var(--background-base); border-radius:var(--radius-pill); }
+  #xdlg .seg button { flex:1; border:none; background:transparent; color:var(--text-subdued); padding:8px; }
+  #xdlg .seg button:hover { color:#fff; background:transparent; }
+  #xdlg .seg button[aria-pressed="true"] { background:#fff; color:#101010; }
+  #xdlg .fld { flex-direction:column; align-items:stretch; gap:8px; font-size:12px; }
+  #xdlg select, #xdlg input[type=date] { background:var(--background-base); color-scheme:dark; width:100%; }
+  #xdlg .dates { display:flex; gap:8px; }
+  #xdlg .chk { font-size:12px; cursor:pointer; }
+  #xdlg .chk input { width:16px; height:16px; }
+  #xdlg .sum { display:flex; flex-direction:column; gap:4px; }
+  #xdlg .sum b { font-size:16px; }
+  #xdlg .sum .note { font-size:12px; color:var(--text-subdued); }
+  #xdlg .sum .note.warn { color:var(--orange); }
+  #xdlg .sum .note.bad { color:var(--out); }
+  #xdlg .actions { display:flex; justify-content:flex-end; gap:8px; }
+  /* Dropdown ตาม Design System (แทน native select ทั้งหมด) */
+  select.dd-native { display:none !important; }
+  .dd-btn { display:inline-flex; align-items:center; justify-content:space-between; gap:8px; min-height:32px;
+            background:var(--background-card); color:var(--text-base); border:1px solid transparent;
+            border-radius:var(--radius-pill); padding:8px 12px 8px 16px; font-weight:400; line-height:1.2; text-align:left; }
+  .dd-btn:hover { background:var(--border-subtle); border-color:transparent; }
+  .dd-btn[aria-expanded="true"] { border-color:var(--border-subtle); box-shadow:inset 0 0 0 1px #fff; }
+  .dd-btn .dd-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .dd-btn .chev { flex-shrink:0; margin:0; color:var(--text-subdued); transition:transform .2s ease; }
+  .dd-btn[aria-expanded="true"] .chev { transform:rotate(180deg); }
+  .dd-menu { position:fixed; z-index:10; max-height:320px; overflow:auto; padding:4px; display:none;
+             background:var(--background-card); border-radius:var(--radius-md); box-shadow:var(--shadow-popover); }
+  .dd-menu.open { display:block; }
+  .dd-opt { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 12px; border-radius:var(--radius-sm);
+            cursor:pointer; color:var(--text-base); font-size:14px; white-space:nowrap; }
+  .dd-opt.active { background:var(--border-subtle); }
+  .dd-opt .check { flex-shrink:0; color:var(--brand-green); visibility:hidden; }
+  .dd-opt[aria-selected="true"] { font-weight:700; }
+  .dd-opt[aria-selected="true"] .check { visibility:visible; }
+  .dd-opt[aria-disabled="true"] { color:var(--text-placeholder); cursor:default; }
+  .dd-group { padding:8px 12px 4px; font-size:12px; color:var(--text-subdued); }
+  #xdlg .dd-btn { width:100%; background:var(--background-base); }
+  #xdlg .dd-btn:hover { background:var(--background-highlight); }
+  #card .dd-btn { background:var(--background-base); }
+  #graphInfo, #txCount { font-size:12px; font-weight:400; font-family:var(--font-ui); }
+  .hint { font-size:12px; font-weight:400; font-family:var(--font-ui); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tron Wallet Dashboard</h1>
+  <label>Token <select id="fToken"></select></label>
+  <label><span data-i18n="f_range">ช่วงเวลา</span>
+    <select id="fDays">
+      <option value="1" data-i18n="d1">24 ชม.</option><option value="7" data-i18n="d7">7 วัน</option>
+      <option value="30" selected data-i18n="d30">30 วัน</option><option value="90" data-i18n="d90">90 วัน</option>
+      <option value="0" data-i18n="all">ทั้งหมด</option>
+    </select>
+  </label>
+  <label><span data-i18n="f_min">ขั้นต่ำ</span> <input id="fMin" type="number" value="0" min="0" style="width:90px"></label>
+  <label><span data-i18n="f_type">ประเภท</span>
+    <select id="fType">
+      <option value="" data-i18n="all">ทั้งหมด</option><option>EXCHANGE</option><option>DEX</option>
+      <option>CONTRACT</option><option>PERSON</option>
+    </select>
+  </label>
+  <label><span data-i18n="f_top">คู่ค้าสูงสุด</span> <input id="fTop" type="number" value="30" min="5" style="width:70px"></label>
+  <button id="btnReload" class="primary" data-i18n="reload">โหลดใหม่</button>
+  <span id="status" class="muted">กำลังโหลด…</span>
+  <div class="lang" role="group" aria-label="Language">
+    <button type="button" data-lang="th">TH</button><button type="button" data-lang="en">EN</button>
+  </div>
+  <button id="btnLog" class="ghost" data-i18n-title="log_title" title="ดูขั้นตอนการโหลดและ error"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg> Log</button>
+  <span class="muted hint" id="ver">v2026-10-06-17</span>
+</header>
+
+<div class="tabs" id="tabs"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="main">
+  <div class="panel">
+    <h2><span data-i18n="graph_title">ความเชื่อมโยงของกระแสเงิน</span>
+      <span><span class="muted" id="graphInfo"></span>
+        <span class="muted hint" style="margin-left:8px" data-i18n="graph_hint">scroll = ซูม · คลิกลาก = เลื่อน</span>
+        <button id="btnFit" class="ghost" data-i18n-title="reset_title" title="Reset Zoom ให้เห็นทั้งกราฟ (ดับเบิลคลิกพื้นที่ว่าง หรือกด 0)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Reset Zoom</button></span></h2>
+    <div id="graphWrap">
+      <div id="graph"></div>
+      <div id="loader" class="on"><div class="box"><div class="spin"></div><span id="loaderText">กำลังโหลดข้อมูล…</span></div></div>
+      <div id="card">
+        <span class="x" id="cardClose" role="button" data-i18n-aria="close" aria-label="ปิด"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+        <div><b id="cardName"></b> <span id="cardBadge"></span></div>
+        <div class="full-addr" id="cardAddr"></div>
+        <div class="muted" id="cardStats" style="font-size:12px"></div>
+        <div class="row">
+          <button id="cardCopy" class="primary"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Copy address</button>
+          <a id="cardScan" target="_blank"><button>Tronscan <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button></a>
+        </div>
+        <div id="cardEdit">
+          <div class="row">
+            <input type="text" id="cardInName" data-i18n-ph="name_ph" placeholder="ตั้งชื่อ เช่น Binance Deposit">
+            <select id="cardInType">
+              <option value="PERSON" data-i18n="t_person">คน</option><option value="EXCHANGE">Exchange</option>
+              <option value="DEX">DEX</option><option value="CONTRACT">Contract</option>
+            </select>
+          </div>
+          <div class="row"><button id="cardSave"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> <span data-i18n="save_book">บันทึกลง AddressBook</span></button><span class="muted" id="cardMsg"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend muted">
+      <span><span class="dot tw"></span><span data-i18n="lg_tracked">Wallet ที่ติดตาม</span></span>
+      <span><span class="dot" style="background:#f0b90b"></span>Exchange (CEX)</span>
+      <span><span class="dot" style="background:#b06dff"></span>DEX</span>
+      <span><span class="dot" style="background:#20c9c9"></span><span data-i18n="lg_contract">Contract อื่น</span></span>
+      <span><span class="dot" style="background:var(--gray)"></span><span data-i18n="lg_person">คน / wallet ทั่วไป</span></span>
+      <span><span class="dot" style="background:transparent;border:2px solid var(--orange)"></span><span data-i18n="lg_multi_a">ขอบส้ม /</span> <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" style="color:var(--orange)"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg> <span data-i18n="lg_multi_b">= เชื่อมหลาย wallet</span></span>
+      <span data-i18n="lg_dashed">เส้นประจาง = wallet อื่นที่ใช้คู่ค้าเดียวกัน (เมื่อเลือกแท็บ wallet)</span>
+      <span data-i18n="lg_thick">เส้นหนา = มูลค่ามาก · ลูกศร = ทิศทางเงิน · คลิก node เพื่อกรองรายการ</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 data-i18n="p_wallets">สรุปราย Wallet</h2>
+    <div class="scroll"><table id="tblWallets"></table></div>
+  </div>
+
+  <div class="panel">
+    <h2 data-i18n="p_cp">คู่ค้าหลัก (Top Counterparties)</h2>
+    <div class="scroll" style="max-height:360px"><table id="tblCp"></table></div>
+  </div>
+
+  <div class="panel">
+    <h2><span><span data-i18n="p_tx">รายการล่าสุด</span> <span class="muted hint" id="txCount"></span> <span class="muted" id="txFilter"></span></span>
+      <span class="export">
+        <span class="muted hint" id="exportMsg"></span>
+        <button id="btnXlsx" class="ghost" data-i18n-title="x_xlsx_title" title="Export รายการที่กรองอยู่เป็น Excel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg> .xlsx</button>
+        <button id="btnPdf" class="ghost" data-i18n-title="x_pdf_title" title="Export รายการที่กรองอยู่เป็น PDF"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg> PDF</button>
+      </span></h2>
+    <div class="scroll" style="max-height:360px"><table id="tblTx"></table></div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="xdlg" role="dialog" aria-modal="true" aria-labelledby="xTitle">
+  <div class="box">
+    <div><h3 id="xTitle" data-i18n="xr_title">Export รายการ</h3><div class="scope" id="xScope"></div></div>
+    <div class="seg" id="xFmt"><button type="button" data-v="xlsx">Excel</button><button type="button" data-v="pdf">PDF</button></div>
+    <label class="fld"><span data-i18n="xr_period">ช่วงเวลา</span><select id="xRangeSel"></select></label>
+    <div class="dates"><input type="date" id="xFrom" data-i18n-aria="xr_from" aria-label="ตั้งแต่"><input type="date" id="xTo" data-i18n-aria="xr_to" aria-label="ถึง"></div>
+    <label class="chk" id="xSkipWrap"><input type="checkbox" id="xSkip" checked> <span data-i18n="xr_skip">นับเฉพาะวันที่มีรายการ</span></label>
+    <div class="sum" id="xPreview" aria-live="polite"></div>
+    <div class="actions"><button type="button" class="ghost" id="xCancel" data-i18n="cancel">ยกเลิก</button>
+      <button type="button" class="primary" id="xGo">Export</button></div>
+  </div>
+</div>
+<div id="log">
+  <div class="log-head"><b data-i18n="log_head">Log การโหลด</b>
+    <button id="btnLogClose" class="ghost" data-i18n-aria="close" aria-label="ปิด"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <div id="logList"></div>
+</div>
+
+<script>
+let RAW = { wallets: [], txs: [] };
+let focusAddr = null;
+let selWallet = ''; /* '' = ทุก wallet */
+let network = null;
+
+const $ = id => document.getElementById(id);
+/* ===== Dropdown ตาม Design System: ห่อ <select> เดิมไว้ (ซ่อน) เพื่อให้โค้ดเดิมใช้ .value / change ได้ตามปกติ ===== */
+const SVG_ATTR = 'width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const CHEV = '<svg class="chev" ' + SVG_ATTR + '><path d="m6 9 6 6 6-6"></path></svg>';
+const CHECK = '<svg class="check" ' + SVG_ATTR + '><path d="M20 6 9 17l-5-5"></path></svg>';
+let ddOpen = null;
+function enhanceSelect(sel) {
+  if (sel.dataset.dd) return;
+  sel.dataset.dd = '1';
+  sel.classList.add('dd-native');
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'dd-btn';
+  btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+  if (sel.style.width) btn.style.minWidth = sel.style.width;
+  btn.innerHTML = '<span class="dd-label"></span>' + CHEV;
+  sel.insertAdjacentElement('afterend', btn);
+  const menu = document.createElement('div');
+  menu.className = 'dd-menu'; menu.setAttribute('role', 'listbox');
+  document.body.appendChild(menu);
+  let active = -1;
+  const opts = () => [...menu.querySelectorAll('.dd-opt')];
+  const sync = () => {
+    const o = sel.options[sel.selectedIndex];
+    btn.querySelector('.dd-label').textContent = o ? o.text : '';
+    const lab = sel.closest('label');
+    btn.setAttribute('aria-label', (lab ? lab.textContent.replace(o ? o.text : '', '').trim() + ': ' : '') + (o ? o.text : ''));
+  };
+  const build = () => {
+    let html = '', i = 0;
+    const optHtml = o => `<div class="dd-opt" role="option" data-i="${o.index}" aria-selected="${o.selected}"` +
+      `${o.disabled ? ' aria-disabled="true"' : ''}><span>${esc(o.text)}</span>${CHECK}</div>`;
+    [...sel.children].forEach(ch => {
+      if (ch.tagName === 'OPTGROUP') html += `<div class="dd-group">${esc(ch.label)}</div>` + [...ch.children].map(optHtml).join('');
+      else html += optHtml(ch);
+      i++;
+    });
+    menu.innerHTML = html;
+  };
+  const setActive = n => {
+    const list = opts().filter(o => o.getAttribute('aria-disabled') !== 'true');
+    if (!list.length) return;
+    active = (n + list.length) % list.length;
+    opts().forEach(o => o.classList.remove('active'));
+    list[active].classList.add('active');
+    list[active].scrollIntoView({ block: 'nearest' });
+  };
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    menu.style.minWidth = r.width + 'px';
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+    const below = window.innerHeight - r.bottom - 8;
+    if (below < Math.min(menu.scrollHeight, 320) && r.top > below) { menu.style.top = 'auto'; menu.style.bottom = (window.innerHeight - r.top + 4) + 'px'; }
+    else { menu.style.bottom = 'auto'; menu.style.top = (r.bottom + 4) + 'px'; }
+  };
+  const close = () => { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); if (ddOpen === api) ddOpen = null; };
+  const open = () => {
+    if (ddOpen && ddOpen !== api) ddOpen.close();
+    build(); menu.classList.add('open'); btn.setAttribute('aria-expanded', 'true'); place(); ddOpen = api;
+    const list = opts().filter(o => o.getAttribute('aria-disabled') !== 'true');
+    setActive(Math.max(0, list.findIndex(o => o.getAttribute('aria-selected') === 'true')));
+  };
+  const choose = idx => {
+    const o = sel.options[idx];
+    if (!o || o.disabled) return;
+    const changed = sel.selectedIndex !== idx;
+    sel.selectedIndex = idx; close(); btn.focus();
+    if (changed) sel.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  btn.addEventListener('click', e => { e.preventDefault(); menu.classList.contains('open') ? close() : open(); });
+  btn.addEventListener('keydown', e => {
+    const isOpen = menu.classList.contains('open');
+    if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); if (!isOpen) open(); else setActive(active + (e.key === 'ArrowDown' ? 1 : -1)); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isOpen) open(); else { const a = menu.querySelector('.dd-opt.active'); if (a) choose(+a.dataset.i); } }
+    else if (e.key === 'Escape' && isOpen) { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Tab' && isOpen) close();
+  });
+  menu.addEventListener('mousedown', e => e.preventDefault());
+  menu.addEventListener('click', e => { const o = e.target.closest('.dd-opt'); if (o) choose(+o.dataset.i); });
+  menu.addEventListener('mousemove', e => {
+    const o = e.target.closest('.dd-opt'); if (!o || o.classList.contains('active') || o.getAttribute('aria-disabled') === 'true') return;
+    setActive(opts().filter(x => x.getAttribute('aria-disabled') !== 'true').indexOf(o));
+  });
+  /* โค้ดเดิมตั้งค่า .value / .selectedIndex / innerHTML ตรง ๆ: ให้ปุ่มอัปเดตตามทุกครั้ง */
+  ['value', 'selectedIndex'].forEach(prop => {
+    const d = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, prop);
+    Object.defineProperty(sel, prop, { configurable: true, get() { return d.get.call(this); }, set(v) { d.set.call(this, v); sync(); } });
+  });
+  new MutationObserver(() => { sync(); if (menu.classList.contains('open')) build(); })
+    .observe(sel, { childList: true, subtree: true, characterData: true, attributes: true });
+  const api = { close, place };
+  sync();
+  return api;
+}
+document.addEventListener('mousedown', e => {
+  if (ddOpen && !e.target.closest('.dd-menu') && !e.target.closest('.dd-btn')) ddOpen.close();
+});
+window.addEventListener('resize', () => ddOpen && ddOpen.close());
+document.addEventListener('scroll', e => { if (ddOpen && !(e.target.closest && e.target.closest('.dd-menu'))) ddOpen.close(); }, true);
+
+/* ===== ภาษา (TH / EN) ===== */
+let LANG = window.LANG === 'en' ? 'en' : 'th';
+const I18N = {
+  th: {
+    f_range: 'ช่วงเวลา', d1: '24 ชม.', d7: '7 วัน', d30: '30 วัน', d90: '90 วัน', all: 'ทั้งหมด',
+    f_min: 'ขั้นต่ำ', f_type: 'ประเภท', f_top: 'คู่ค้าสูงสุด', reload: 'โหลดใหม่',
+    log_title: 'ดูขั้นตอนการโหลดและ error', log_head: 'Log การโหลด',
+    graph_title: 'ความเชื่อมโยงของกระแสเงิน', graph_hint: 'scroll = ซูม · คลิกลาก = เลื่อน',
+    reset_title: 'Reset Zoom ให้เห็นทั้งกราฟ (ดับเบิลคลิกพื้นที่ว่าง หรือกด 0)',
+    close: 'ปิด', name_ph: 'ตั้งชื่อ เช่น Binance Deposit', save_book: 'บันทึกลง AddressBook',
+    t_person: 'คน', t_exchange: 'Exchange', t_dex: 'DEX', t_contract: 'Contract',
+    lg_tracked: 'Wallet ที่ติดตาม', lg_contract: 'Contract อื่น', lg_person: 'คน / wallet ทั่วไป',
+    lg_multi_a: 'ขอบส้ม /', lg_multi_b: '= เชื่อมหลาย wallet',
+    lg_dashed: 'เส้นประจาง = wallet อื่นที่ใช้คู่ค้าเดียวกัน (เมื่อเลือกแท็บ wallet)',
+    lg_thick: 'เส้นหนา = มูลค่ามาก · ลูกศร = ทิศทางเงิน · คลิก node เพื่อกรองรายการ',
+    p_wallets: 'สรุปราย Wallet', p_cp: 'คู่ค้าหลัก (Top Counterparties)', p_tx: 'รายการล่าสุด',
+    x_xlsx_title: 'Export รายการที่กรองอยู่เป็น Excel', x_pdf_title: 'Export รายการที่กรองอยู่เป็น PDF',
+    copied: 'คัดลอกแล้ว', copy_fail: 'คัดลอกไม่ได้ ให้เลือกข้อความแล้วกด Cmd+C',
+    saving: 'กำลังบันทึก…', saved: 'บันทึกแล้ว', save_fail: 'บันทึก AddressBook ไม่ได้: ',
+    vis_ok: 'โหลดไลบรารีกราฟแล้ว', vis_fail: 'โหลดไลบรารีกราฟ (vis-network) ไม่ได้ จะแสดงเฉพาะตาราง',
+    vis_fail_box: 'โหลดไลบรารีกราฟไม่ได้',
+    loading: 'กำลังโหลด…', loading_s: s => `กำลังโหลด… ${s}s`,
+    no_data_yet: s => `ยังไม่ได้ข้อมูล (${s}s) ลองกด โหลดใหม่ หรือดู Executions ใน Apps Script`,
+    requesting: 'กำลังขอข้อมูลจาก Server…', drawing: 'กำลังวาดกราฟ…',
+    need_gas: 'ต้องเปิดผ่าน Apps Script',
+    need_gas_log: 'ไม่พบ google.script.run ต้องเปิดผ่าน Apps Script (เมนูในชีต หรือ URL Web App) ไม่ใช่เปิดไฟล์ตรง ๆ',
+    calling: 'เรียก getDashboardData() …',
+    wait30: 'รอ Server นานกว่า 30 วินาทีแล้ว',
+    wait60: 'รอเกิน 60 วินาที: ดู Executions ใน Apps Script ว่า getDashboardData ค้างหรือ error',
+    received: (s, extra) => `ได้ข้อมูลจาก Server ใน ${s}s${extra}`, kind: k => ` (แบบ ${k})`,
+    json_fail: 'แปลง JSON ไม่ได้: ', read_fail: 'อ่านข้อมูลจาก Server ไม่ได้: ',
+    old_obj: 'Server ยังส่งแบบ object (code.gs ใน GAS อาจเป็นเวอร์ชันเก่า)',
+    null_log: 'Server ส่ง null กลับมา', null_status: 'Server ส่งข้อมูลว่างกลับมา (null)',
+    dup: n => `ตัดรายการซ้ำ ${n} แถว (tx เดียวกันถูกบันทึกจากหลาย wallet ที่ติดตาม: ปกติ)`,
+    range_empty: 'ไม่มีรายการในช่วงที่เลือก แสดงทั้งหมด',
+    drawn: s => `วาดตารางและกราฟเสร็จ ${s}s`,
+    loaded: (n, shown, s, date) => `โหลด ${n} รายการ (แสดง ${shown}) ใน ${s}s · ${date}`,
+    load_fail: 'โหลดไม่สำเร็จ: ',
+    diag_none: 'Server ไม่ส่งข้อมูลวินิจฉัย (code.gs ใน GAS อาจเป็นเวอร์ชันเก่า)',
+    diag_sheet: (r, rd, s) => `[Server] ชีต Transactions มี ${r} แถว · อ่าน ${rd} · ส่งมา ${s}`,
+    diag_nosheet: n => `[Server] ไม่พบชีต '${n}'`,
+    diag_capped: (c, r) => `[Server] เกินเพดาน ${c} แถวเก่าสุดไม่ถูกส่งมา (อ่านได้สูงสุด ${r} แถวล่าสุด)`,
+    diag_nohash: (n, rows) => `[Server] ข้าม ${n} แถวที่ไม่มี Tx Hash (คอลัมน์ K) เช่นแถว ${rows}`,
+    diag_baddate: (n, rows) => `[Server] ข้าม ${n} แถวที่วันที่อ่านไม่ได้ (คอลัมน์ A) เช่น ${rows}`,
+    diag_blank: n => `[Server] ข้ามแถวว่าง ${n} แถว`,
+    diag_zero: n => `[Server] มี ${n} แถวที่จำนวนเป็น 0 หรืออ่านไม่ได้ (ยังส่งมา แต่จะโดนตัดถ้าตั้ง "ขั้นต่ำ" มากกว่า 0)`,
+    diag_winvalid: (n, l) => `[Server] ชีต Wallet: address ไม่ถูกต้อง ${n} แถว ไม่ถูกติดตาม: ${l}`,
+    diag_wdup: (n, l) => `[Server] ชีต Wallet: address ซ้ำ ${n} แถว: ${l}`,
+    diag_wblank: n => `[Server] ชีต Wallet: แถวไม่มี address ${n} แถว`,
+    fn_cut: (label, n) => `${label} ตัด ${n}`, fn_days: d => `ช่วง ${d} วัน`, fn_range: 'ช่วงเวลา',
+    fn_min: m => `ขั้นต่ำ ${m}`, fn_tab: n => `แท็บ wallet ตัด ${n}`,
+    fn_total: (t, steps, left) => `[ตัวกรอง] ทั้งหมด ${t} → ${steps}เหลือ ${left}`,
+    fn_others: s => `[ตัวกรอง] token อื่นที่ไม่ได้แสดง: ${s}`,
+    k_tracked: 'Wallet ที่ติดตาม', k_count: 'จำนวนรายการ', k_in: t => `เงินเข้า (${t})`, k_out: t => `เงินออก (${t})`,
+    k_net: 'สุทธิ', k_cp: 'คู่ค้าทั้งหมด', k_shared: 'คู่ค้าที่เชื่อมหลาย wallet', k_via: (t, n) => `ผ่าน ${t} (${n})`,
+    th_wallet: 'Wallet', th_in: 'เข้า', th_out: 'ออก', th_net: 'สุทธิ', th_cps: 'คู่ค้า',
+    th_cp: 'คู่ค้า', th_type: 'ประเภท', th_recv: 'รับจากเรา', th_sent: 'ส่งให้เรา', th_linked: 'เชื่อมกับ',
+    th_time: 'เวลา', th_from: 'จาก', th_to: 'ถึง', th_amount: 'จำนวน', th_name: 'ชื่อ',
+    cap_graph: (a, b) => `[แสดงผล] กราฟแสดงคู่ค้า ${a} จาก ${b} (ปรับที่ช่อง "คู่ค้าสูงสุด")`,
+    cap_cp: n => `[แสดงผล] ตารางคู่ค้าแสดง 100 จาก ${n}`,
+    cap_tx: n => `[แสดงผล] ตารางรายการล่าสุดแสดง 200 จาก ${n} (Export .xlsx/PDF ได้ครบทุกแถว)`,
+    x_none: 'ไม่มีรายการให้ Export', x_allw: 'ทุก wallet',
+    x_making: (f, n) => `กำลังสร้าง ${f} (${n} แถว)…`, x_log: (f, n) => `Export ${f} ${n} แถว …`,
+    x_done: f => `Export ${f} เสร็จ`, x_downloaded: 'ดาวน์โหลดแล้ว', x_click: f => `กดเพื่อดาวน์โหลด ${f}`,
+    tx_count: (shown, total, period) => total > shown ? `${shown} จาก ${total} รายการ · ${period}` : `${total} รายการ · ${period}`,
+    xr_title: 'Export รายการ', xr_format: 'รูปแบบไฟล์', xr_range: 'ช่วงที่จะ Export', xr_view: 'ตามที่แสดงอยู่',
+    xr_d1: '1 วัน', xr_d7: '7 วัน', xr_d30: '1 เดือน (30 วัน)', xr_d90: '3 เดือน (90 วัน)', xr_month: 'เลือกเดือน',
+    xr_custom: 'กำหนดเอง', xr_all: 'ทั้งหมด', xr_anchor: 'นับย้อนจาก', xr_auto: 'อัตโนมัติ', xr_today: 'วันนี้',
+    xr_latest: 'วันล่าสุดที่มีรายการ', xr_active: 'นับเฉพาะวันที่มีรายการ', xr_from: 'ตั้งแต่', xr_to: 'ถึง', cancel: 'ยกเลิก',
+    xr_go: f => `Export ${f}`, xr_will: n => `จะ Export ${n} รายการ`,
+    xr_nodata: 'ไม่มีรายการของ Token / wallet ที่เลือกเลย ลองเปลี่ยน Token หรือแท็บ wallet',
+    xr_empty: 'ช่วงนี้ไม่มีรายการ ลองเลือก "วันล่าสุดที่มีรายการ" หรือช่วงที่ยาวขึ้น',
+    xr_fallback: (n, d) => `ไม่มีรายการใน ${n} วันล่าสุด จึงใช้ ${n} วันจนถึง ${d} (วันล่าสุดที่มีรายการ) แทน`,
+    xr_fewdays: (got, n) => `มีรายการแค่ ${got} วัน จากที่ขอ ${n} วัน จึง Export เท่าที่มี`,
+    xr_before: d => `ข้อมูลเริ่มวันที่ ${d} ช่วงก่อนหน้านั้นจึงไม่มีรายการ`,
+    xr_after: d => `รายการล่าสุดคือวันที่ ${d} ช่วงหลังจากนั้นจึงไม่มีรายการ`,
+    xr_capped: 'Dashboard โหลดเฉพาะ 5,000 แถวล่าสุด รายการที่เก่ากว่านั้นจะไม่อยู่ในไฟล์',
+    xr_swapped: 'วันที่เริ่มอยู่หลังวันที่สิ้นสุด จึงสลับให้', xr_nodate: 'เลือกวันที่ให้ครบทั้ง 2 ช่อง',
+    xr_big: n => `มี ${n} รายการ ไฟล์ PDF จะยาวหลายหน้า ถ้าจะเอาไปใช้ต่อ แนะนำ Excel`,
+    xr_period: 'ช่วงเวลา', xr_view_now: 'ตามที่แสดงอยู่ตอนนี้', xr_last1: 'วันล่าสุด', xr_lastN: n => `${n} วันล่าสุด`,
+    xr_months: 'รายเดือน', xr_custom2: 'กำหนดเอง…', xr_skip: 'นับเฉพาะวันที่มีรายการ', xr_count: n => `${n} รายการ`,
+    xr_daysN: n => `${n} วัน`, xr_activeN: n => `${n} วันที่มีรายการ`,
+    xr_wallet: w => `Wallet ${w}`, xr_node: n => `เฉพาะ ${n}`,
+    x_title: t => `รายการเคลื่อนไหว ${t}`, x_filters: 'ตัวกรอง', x_alltypes: 'ทุกประเภท', x_count: 'จำนวน',
+    x_rows: n => `${n} รายการ`, x_generated: 'สร้างเมื่อ', x_total: 'รวม',
+    x_fail: 'Export ไม่สำเร็จ: ', filter_lbl: 'กรอง:', clear: 'ล้าง', none: 'ไม่มีรายการ',
+  },
+  en: {
+    f_range: 'Period', d1: '24 hours', d7: '7 days', d30: '30 days', d90: '90 days', all: 'All',
+    f_min: 'Min amount', f_type: 'Type', f_top: 'Max counterparties', reload: 'Reload',
+    log_title: 'View loading steps and errors', log_head: 'Loading log',
+    graph_title: 'Fund flow network', graph_hint: 'scroll = zoom · drag = pan',
+    reset_title: 'Fit the whole graph (double-click empty space or press 0)',
+    close: 'Close', name_ph: 'Name, e.g. Binance Deposit', save_book: 'Save to AddressBook',
+    t_person: 'Person', t_exchange: 'Exchange', t_dex: 'DEX', t_contract: 'Contract',
+    lg_tracked: 'Tracked wallet', lg_contract: 'Other contract', lg_person: 'Person / regular wallet',
+    lg_multi_a: 'Orange border /', lg_multi_b: '= linked to multiple wallets',
+    lg_dashed: 'Faint dashed line = another wallet using the same counterparty (when a wallet tab is selected)',
+    lg_thick: 'Thicker line = larger value · Arrow = direction of funds · Click a node to filter transactions',
+    p_wallets: 'Wallet summary', p_cp: 'Top counterparties', p_tx: 'Recent transactions',
+    x_xlsx_title: 'Export filtered transactions to Excel', x_pdf_title: 'Export filtered transactions to PDF',
+    copied: 'Copied', copy_fail: 'Could not copy. Select the text and press Cmd+C',
+    saving: 'Saving…', saved: 'Saved', save_fail: 'Could not save to AddressBook: ',
+    vis_ok: 'Graph library loaded', vis_fail: 'Could not load the graph library (vis-network); showing tables only',
+    vis_fail_box: 'Could not load the graph library',
+    loading: 'Loading…', loading_s: s => `Loading… ${s}s`,
+    no_data_yet: s => `No data yet (${s}s). Press Reload or check Executions in Apps Script`,
+    requesting: 'Requesting data from server…', drawing: 'Drawing graph…',
+    need_gas: 'Must be opened via Apps Script',
+    need_gas_log: 'google.script.run not found. Open it through Apps Script (the Sheet menu or the Web App URL), not as a file.',
+    calling: 'Calling getDashboardData() …',
+    wait30: 'Waiting for the server for more than 30 seconds',
+    wait60: 'Waited over 60 seconds: check Executions in Apps Script to see whether getDashboardData hung or failed',
+    received: (s, extra) => `Received data from server in ${s}s${extra}`, kind: k => ` (type ${k})`,
+    json_fail: 'Could not parse JSON: ', read_fail: 'Could not read data from server: ',
+    old_obj: 'Server returned an object (code.gs in GAS may be an old version)',
+    null_log: 'Server returned null', null_status: 'Server returned empty data (null)',
+    dup: n => `Removed ${n} duplicate rows (same tx recorded from several tracked wallets: normal)`,
+    range_empty: 'No transactions in the selected period; showing all',
+    drawn: s => `Tables and graph drawn in ${s}s`,
+    loaded: (n, shown, s, date) => `Loaded ${n} transactions (showing ${shown}) in ${s}s · ${date}`,
+    load_fail: 'Load failed: ',
+    diag_none: 'Server sent no diagnostics (code.gs in GAS may be an old version)',
+    diag_sheet: (r, rd, s) => `[Server] Transactions sheet has ${r} rows · read ${rd} · sent ${s}`,
+    diag_nosheet: n => `[Server] Sheet '${n}' not found`,
+    diag_capped: (c, r) => `[Server] Over the limit: the ${c} oldest rows were not sent (reads at most the latest ${r} rows)`,
+    diag_nohash: (n, rows) => `[Server] Skipped ${n} rows without a Tx Hash (column K), e.g. rows ${rows}`,
+    diag_baddate: (n, rows) => `[Server] Skipped ${n} rows with an unreadable date (column A), e.g. ${rows}`,
+    diag_blank: n => `[Server] Skipped ${n} blank rows`,
+    diag_zero: n => `[Server] ${n} rows have an amount of 0 or unreadable (still sent, but removed when "Min amount" is above 0)`,
+    diag_winvalid: (n, l) => `[Server] Wallet sheet: ${n} invalid addresses, not tracked: ${l}`,
+    diag_wdup: (n, l) => `[Server] Wallet sheet: ${n} duplicate addresses: ${l}`,
+    diag_wblank: n => `[Server] Wallet sheet: ${n} rows without an address`,
+    fn_cut: (label, n) => `${label} removed ${n}`, fn_days: d => `last ${d} days`, fn_range: 'Period',
+    fn_min: m => `Min ${m}`, fn_tab: n => `Wallet tab removed ${n}`,
+    fn_total: (t, steps, left) => `[Filters] Total ${t} → ${steps}remaining ${left}`,
+    fn_others: s => `[Filters] Other tokens not shown: ${s}`,
+    k_tracked: 'Tracked wallets', k_count: 'Transactions', k_in: t => `Inflow (${t})`, k_out: t => `Outflow (${t})`,
+    k_net: 'Net', k_cp: 'Counterparties', k_shared: 'Shared counterparties', k_via: (t, n) => `Via ${t} (${n})`,
+    th_wallet: 'Wallet', th_in: 'In', th_out: 'Out', th_net: 'Net', th_cps: 'Counterparties',
+    th_cp: 'Counterparty', th_type: 'Type', th_recv: 'Received from us', th_sent: 'Sent to us', th_linked: 'Linked to',
+    th_time: 'Time', th_from: 'From', th_to: 'To', th_amount: 'Amount', th_name: 'Name',
+    cap_graph: (a, b) => `[Display] Graph shows ${a} of ${b} counterparties (adjust "Max counterparties")`,
+    cap_cp: n => `[Display] Counterparty table shows 100 of ${n}`,
+    cap_tx: n => `[Display] Recent transactions table shows 200 of ${n} (Export .xlsx/PDF includes every row)`,
+    x_none: 'No transactions to export', x_allw: 'All wallets',
+    x_making: (f, n) => `Creating ${f} (${n} rows)…`, x_log: (f, n) => `Export ${f} ${n} rows …`,
+    x_done: f => `Export ${f} done`, x_downloaded: 'Downloaded', x_click: f => `Click to download ${f}`,
+    tx_count: (shown, total, period) => total > shown ? `${shown} of ${total} · ${period}` : `${total} transactions · ${period}`,
+    xr_title: 'Export transactions', xr_format: 'File format', xr_range: 'Range to export', xr_view: 'Current view',
+    xr_d1: '1 day', xr_d7: '7 days', xr_d30: '1 month (30 days)', xr_d90: '3 months (90 days)', xr_month: 'Pick a month',
+    xr_custom: 'Custom', xr_all: 'All', xr_anchor: 'Count back from', xr_auto: 'Automatic', xr_today: 'Today',
+    xr_latest: 'Latest day with transactions', xr_active: 'Only days with transactions', xr_from: 'From', xr_to: 'To', cancel: 'Cancel',
+    xr_go: f => `Export ${f}`, xr_will: n => `${n} transactions will be exported`,
+    xr_nodata: 'No transactions for the selected token / wallet. Change the token or wallet tab.',
+    xr_empty: 'No transactions in this range. Try "Latest day with transactions" or a longer range.',
+    xr_fallback: (n, d) => `No transactions in the last ${n} days, so using the ${n} days up to ${d} (latest day with transactions)`,
+    xr_fewdays: (got, n) => `Only ${got} of the requested ${n} days have transactions; exporting what exists`,
+    xr_before: d => `Data starts on ${d}, so the earlier part of the range is empty`,
+    xr_after: d => `The latest transaction is on ${d}, so the later part of the range is empty`,
+    xr_capped: 'The dashboard loads only the latest 5,000 rows; older transactions will not be in the file',
+    xr_swapped: 'The start date was after the end date, so they were swapped', xr_nodate: 'Pick both dates',
+    xr_big: n => `${n} transactions: the PDF will run to many pages. Excel is better for further use.`,
+    xr_period: 'Period', xr_view_now: 'Current view', xr_last1: 'Latest day', xr_lastN: n => `Last ${n} days`,
+    xr_months: 'By month', xr_custom2: 'Custom…', xr_skip: 'Count only days with transactions', xr_count: n => `${n} transactions`,
+    xr_daysN: n => `${n} days`, xr_activeN: n => `${n} days with transactions`,
+    xr_wallet: w => `Wallet ${w}`, xr_node: n => `Only ${n}`,
+    x_title: t => `${t} transactions`, x_filters: 'Filters', x_alltypes: 'All types', x_count: 'Count',
+    x_rows: n => `${n} transactions`, x_generated: 'Generated', x_total: 'Total',
+    x_fail: 'Export failed: ', filter_lbl: 'Filter:', clear: 'Clear', none: 'No transactions',
+  },
+};
+function L(key, ...args) {
+  const v = key in I18N[LANG] ? I18N[LANG][key] : I18N.th[key];
+  if (v === undefined) return key;
+  return typeof v === 'function' ? v(...args) : v;
+}
+let statusFn = null;
+function setStatus(fn) { statusFn = fn; $('status').textContent = fn(); }
+function applyLang(lang) {
+  LANG = lang === 'en' ? 'en' : 'th';
+  window.LANG = LANG;
+  try { localStorage.setItem('dash-lang', LANG); } catch (e) {}
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = L(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = L(el.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = L(el.dataset.i18nPh); });
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', L(el.dataset.i18nAria)); });
+  document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('on', b.dataset.lang === LANG));
+  if (statusFn) $('status').textContent = statusFn();
+  if (RAW.txs.length) { hideCard(); render(); }
+  if ($('xdlg').classList.contains('open')) openExport(xs.fmt);
+}
+
+/* ห้ามมีเครื่องหมายทับสองตัวติดกันในสคริปต์: GAS จะตัดเป็นคอมเมนต์ */
+const SCAN = 'https:' + '/' + '/tronscan.org/#/';
+/* ไอคอน Lucide (สร้างจาก path เพื่อไม่ให้มีสตริง svg ซ้อนใน template) */
+const ICON_PATHS = {
+  link: ['M9 17H7A5 5 0 0 1 7 7h2', 'M15 7h2a5 5 0 1 1 0 10h-2', 'M8 12h8'],
+  copy: ['M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z', 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'],
+};
+function icon(name, color) {
+  const st = color ? ' style="color:' + color + '"' : '';
+  const paths = ICON_PATHS[name].map(d => '<path d="' + d + '"></path>').join('');
+  return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"' +
+    ' stroke-linecap="round" stroke-linejoin="round" class="icon"' + st + '>' + paths + '</svg>';
+}
+
+const short = a => a ? a.slice(0, 6) + '…' + a.slice(-4) : '';
+/* เช่น Monday, October 5, 2026 4:12:36 PM */
+const fmtDate = ts => {
+  const d = new Date(ts);
+  const loc = LANG === 'en' ? 'en-US' : 'th-TH';
+  return d.toLocaleDateString(loc, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString(loc, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: LANG === 'en' });
+};
+const fmt = n => Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+const TYPE_COLOR = { EXCHANGE: '#f0b90b', DEX: '#b06dff', CONTRACT: '#20c9c9', PERSON: '#727272' };
+const TYPE_TH = new Proxy({}, { get: (o, k) => L('t_' + String(k).toLowerCase()) });
+const typeOf = a => (RAW.book && RAW.book[a] && RAW.book[a].type) || 'PERSON';
+/* ป้ายประเภท: พื้นเทา (คน) ใช้ตัวอักษรขาวให้อ่านชัด ประเภทอื่นพื้นสว่างใช้ตัวอักษรดำ */
+const badgeStyle = t => `background:${TYPE_COLOR[t]};color:${t === 'PERSON' ? '#ffffff' : '#101010'}`;
+const badge = a => { const t = typeOf(a); return `<span class="badge" style="${badgeStyle(t)}">${TYPE_TH[t]}</span>`; };
+
+function toast(msg, bad) {
+  const t = $('toast'); t.textContent = msg; t.style.background = bad ? '#ff6b6b' : '#ffffff';
+  t.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 1800);
+}
+
+/* navigator.clipboard อาจถูกบล็อกใน iframe ของ Apps Script จึงมี fallback */
+function copyText(text) {
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    toast(ok ? L('copied') : L('copy_fail'), !ok);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => toast(L('copied')), fallback);
+  } else fallback();
+}
+
+let cardCtx = null; /* { addr, stats } */
+function showCard(addr, stats) {
+  const tracked = RAW.wallets.find(w => w.address === addr);
+  const b = RAW.book[addr] || {};
+  cardCtx = { addr };
+  $('cardName').textContent = tracked ? tracked.label : (b.name || short(addr));
+  $('cardBadge').innerHTML = tracked ? '<span class="badge" style="background:var(--tracked);color:#101010">' + L('lg_tracked') + '</span>' : badge(addr);
+  $('cardAddr').textContent = addr;
+  $('cardStats').textContent = stats || '';
+  $('cardScan').href = SCAN + 'address/' + addr;
+  $('cardEdit').style.display = tracked ? 'none' : '';
+  $('cardInName').value = b.name || '';
+  $('cardInType').value = b.type || 'PERSON';
+  $('cardMsg').textContent = '';
+  $('card').style.display = 'block';
+}
+function hideCard() { $('card').style.display = 'none'; cardCtx = null; }
+
+function saveCard() {
+  if (!cardCtx) return;
+  const addr = cardCtx.addr, name = $('cardInName').value.trim(), type = $('cardInType').value;
+  $('cardSave').disabled = true; $('cardMsg').textContent = L('saving');
+  google.script.run
+    .withSuccessHandler(r => {
+      $('cardSave').disabled = false; $('cardMsg').textContent = '';
+      RAW.book[r.address] = { name: r.name, type: r.type };
+      toast(L('saved'));
+      const keep = addr;
+      render(); /* วาดใหม่ด้วยชื่อ/สีใหม่ */
+      showCard(keep);
+    })
+    .withFailureHandler(e => { $('cardSave').disabled = false; $('cardMsg').textContent = ''; dlog(L('save_fail') + e.message, 'error'); toast(e.message, true); })
+    .setAddressLabel(addr, name, type, LANG);
+}
+
+dlogFlush();
+dlog(typeof vis === 'undefined' ? L('vis_fail') : L('vis_ok'), typeof vis === 'undefined' ? 'warn' : 'ok');
+const loader = (on, text) => { $('loader').classList.toggle('on', on); if (text) $('loaderText').textContent = text; };
+
+function load() {
+  const t0 = Date.now();
+  setStatus(() => L('loading'));
+  loader(true, L('requesting'));
+  if (typeof google === 'undefined' || !google.script) {
+    dlog(L('need_gas_log'), 'error');
+    setStatus(() => L('need_gas')); loader(false); return;
+  }
+  dlog(L('calling'));
+  const timer = setInterval(() => {
+    const sec = (Date.now() - t0) / 1000;
+    const s = sec.toFixed(0);
+    setStatus(() => sec > 60 ? L('no_data_yet', s) : L('loading_s', s));
+    if (Math.round(sec) === 30) dlog(L('wait30'), 'warn');
+    if (Math.round(sec) === 60) dlog(L('wait60'), 'error');
+  }, 1000);
+  google.script.run
+    .withSuccessHandler(d => {
+      clearInterval(timer);
+      dlog(L('received', ((Date.now() - t0) / 1000).toFixed(1),
+        typeof d === 'string' ? ` (${(d.length / 1024).toFixed(0)} KB)` : L('kind', d === null ? 'null' : typeof d)), 'ok');
+      if (typeof d === 'string') {
+        try { d = JSON.parse(d); } catch (e) {
+          dlog(L('json_fail') + e.message, 'error'); loader(false);
+          setStatus(() => L('read_fail') + e.message); return;
+        }
+      } else dlog(L('old_obj'), 'warn');
+      if (!d) { dlog(L('null_log'), 'error'); loader(false); setStatus(() => L('null_status')); return; }
+      dlog(`wallets=${(d.wallets || []).length}, txs=${(d.txs || []).length}, book=${Object.keys(d.book || {}).length}`);
+      if (typeof vis === 'undefined') $('graph').innerHTML = '<p class="muted" style="padding:12px">' + L('vis_fail_box') + '</p>';
+      RAW = d;
+      logServerDiag(d.diag);
+      /* ตัดรายการซ้ำ (tx เดียวกันอาจถูกบันทึกจากหลาย wallet ที่ติดตาม) */
+      const seen = new Set();
+      d.txs.forEach(t => { if (String(t.token).toLowerCase() === 'trx') t.token = 'TRX'; });
+      RAW.txs = d.txs.filter(t => {
+        const k = [t.hash, t.token, t.from, t.to, t.amount].join('|');
+        if (seen.has(k)) return false; seen.add(k); return true;
+      });
+      const dup = d.txs.length - RAW.txs.length;
+      if (dup) dlog(L('dup', dup));
+      buildTokenFilter();
+      /* ถ้าช่วงเวลาที่เลือกไม่มีรายการเลย ให้สลับเป็น "ทั้งหมด" อัตโนมัติ */
+      if (RAW.txs.length && !filtered().length && $('fDays').value !== '0') {
+        $('fDays').value = '0';
+        setStatus(() => L('range_empty'));
+      }
+      loader(true, L('drawing'));
+      const tr = Date.now();
+      render();
+      dlog(L('drawn', ((Date.now() - tr) / 1000).toFixed(1)), 'ok');
+      loader(false);
+      const shown = filtered().length;
+      const took = ((Date.now() - t0) / 1000).toFixed(1), gen = d.generatedAt;
+      setStatus(() => L('loaded', RAW.txs.length, shown, took, fmtDate(gen)));
+    })
+    .withFailureHandler(e => {
+      clearInterval(timer); loader(false);
+      dlog('Server error: ' + (e && e.message || e), 'error');
+      setStatus(() => L('load_fail') + (e && e.message || e));
+    })
+    .getDashboardData();
+}
+
+function buildTokenFilter() {
+  const vol = {};
+  RAW.txs.forEach(t => vol[t.token] = (vol[t.token] || 0) + 1);
+  const tokens = Object.keys(vol).sort((a, b) => vol[b] - vol[a]);
+  const cur = $('fToken').value;
+  $('fToken').innerHTML = tokens.map(t => `<option>${esc(t)}</option>`).join('');
+  $('fToken').value = tokens.includes(cur) ? cur : (tokens.includes('USDT') ? 'USDT' : tokens[0] || '');
+}
+
+function baseFiltered() {
+  const token = $('fToken').value, days = +$('fDays').value, min = +$('fMin').value || 0;
+  const since = days ? Date.now() - days * 864e5 : 0;
+  return RAW.txs.filter(t => t.token === token && t.ts >= since && t.amount >= min);
+}
+
+/* เมื่อเลือก wallet: เอารายการของ wallet นั้น + รายการของ wallet อื่นที่ไปแตะคู่ค้าเดียวกัน (indirect) */
+function filtered() {
+  const base = baseFiltered();
+  if (!selWallet) return base;
+  const tracked = new Set(RAW.wallets.map(w => w.address));
+  const direct = base.filter(t => t.from === selWallet || t.to === selWallet);
+  const cps = new Set();
+  direct.forEach(t => { const o = t.from === selWallet ? t.to : t.from; if (!tracked.has(o)) cps.add(o); });
+  const indirect = base.filter(t => !(t.from === selWallet || t.to === selWallet) &&
+    ((tracked.has(t.from) && cps.has(t.to)) || (tracked.has(t.to) && cps.has(t.from))));
+  indirect.forEach(t => t._indirect = true);
+  direct.forEach(t => t._indirect = false);
+  return direct.concat(indirect);
+}
+
+function buildTabs() {
+  const base = baseFiltered();
+  const cnt = a => base.filter(t => t.from === a || t.to === a).length;
+  const items = [{ address: '', label: L('all'), n: base.length }]
+    .concat(RAW.wallets.map(w => ({ ...w, n: cnt(w.address) })).sort((a, b) => b.n - a.n));
+  $('tabs').innerHTML = items.map(w =>
+    `<div class="tab ${w.address === selWallet ? 'active' : ''} ${w.address && !w.n ? 'empty' : ''}" data-w="${esc(w.address)}">
+      <b>${esc(w.label)}</b><span class="n">${w.n}</span></div>`).join('');
+  $('tabs').querySelectorAll('.tab').forEach(el => el.onclick = () => {
+    selWallet = el.dataset.w; focusAddr = null; hideCard(); render();
+  });
+}
+
+/* ----- Log: ทำไมข้อมูลไม่ครบ ----- */
+function logServerDiag(g) {
+  if (!g) { dlog(L('diag_none'), 'warn'); return; }
+  dlog(L('diag_sheet', g.sheetRows, g.read, g.sent));
+  if (g.noSheet) dlog(L('diag_nosheet', g.noSheet), 'error');
+  if (g.capped) dlog(L('diag_capped', g.capped, g.read), 'warn');
+  if (g.noHash) dlog(L('diag_nohash', g.noHash, g.noHashRows.join(', ')), 'warn');
+  if (g.badDate) dlog(L('diag_baddate', g.badDate, g.badDateRows.join(' | ')), 'warn');
+  if (g.blankRows) dlog(L('diag_blank', g.blankRows));
+  if (g.zeroAmount) dlog(L('diag_zero', g.zeroAmount));
+  if (g.walletInvalid && g.walletInvalid.length) dlog(L('diag_winvalid', g.walletInvalid.length, g.walletInvalid.join(', ')), 'warn');
+  if (g.walletDup && g.walletDup.length) dlog(L('diag_wdup', g.walletDup.length, g.walletDup.join(', ')), 'warn');
+  if (g.walletBlank) dlog(L('diag_wblank', g.walletBlank));
+}
+
+/* แสดงว่าตัวกรองแต่ละตัวตัดไปกี่รายการ (log เฉพาะเมื่อค่าตัวกรองเปลี่ยน) */
+let lastFunnelKey = '';
+function logFilterFunnel() {
+  const token = $('fToken').value, days = +$('fDays').value, min = +$('fMin').value || 0;
+  const key = [token, days, min, selWallet, $('fType').value, $('fTop').value, RAW.txs.length, LANG].join('|');
+  if (key === lastFunnelKey) return;
+  lastFunnelKey = key;
+  const since = days ? Date.now() - days * 864e5 : 0;
+  let cur = RAW.txs;
+  const steps = [];
+  const step = (label, fn) => { const next = cur.filter(fn); if (cur.length - next.length) steps.push(L('fn_cut', label, cur.length - next.length)); cur = next; };
+  step(`Token=${token}`, t => t.token === token);
+  step(days ? L('fn_days', days) : L('fn_range'), t => t.ts >= since);
+  step(L('fn_min', min), t => t.amount >= min);
+  if (selWallet) {
+    const n = filtered().filter(t => !t._indirect).length;
+    steps.push(L('fn_tab', cur.length - n)); cur = { length: n };
+  }
+  const others = Object.entries(RAW.txs.reduce((m, t) => (t.token !== token && (m[t.token] = (m[t.token] || 0) + 1), m), {}))
+    .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(', ');
+  dlog(L('fn_total', RAW.txs.length, steps.length ? steps.join(' → ') + ' → ' : '', cur.length),
+    cur.length < RAW.txs.length ? 'warn' : 'ok');
+  if (others) dlog(L('fn_others', others) + `${Object.keys(RAW.txs.reduce((m, t) => (m[t.token] = 1, m), {})).length > 4 ? ' …' : ''}`);
+}
+
+function render() {
+  try { buildTabs(); renderInner(); logFilterFunnel(); }
+  catch (e) { dlog('Render error: ' + e.message, 'error'); setStatus(() => 'Render error: ' + e.message); }
+}
+
+function renderInner() {
+  const txs = filtered();
+  const token = $('fToken').value;
+  const tracked = new Map(RAW.wallets.map(w => [w.address, w.label]));
+  const nameOf = a => tracked.get(a) || (RAW.book[a] && RAW.book[a].name) || short(a);
+
+  /* ----- สรุปราย wallet ----- */
+  const ws = RAW.wallets.filter(w => !selWallet || w.address === selWallet)
+    .map(w => ({ ...w, in: 0, out: 0, nIn: 0, nOut: 0, cps: new Set() }));
+  const wIdx = new Map(ws.map(w => [w.address, w]));
+  /* ----- คู่ค้า ----- */
+  const cp = new Map(); /* address -> {in,out,n,wallets:Set} */
+  const touchCp = (addr, w, field, amt) => {
+    if (tracked.has(addr)) return;
+    const c = cp.get(addr) || { addr, in: 0, out: 0, n: 0, wallets: new Set() };
+    c[field] += amt; c.n++; c.wallets.add(w);
+    cp.set(addr, c);
+  };
+  txs.forEach(t => {
+    const fw = wIdx.get(t.from), tw = wIdx.get(t.to);
+    if (fw) { fw.out += t.amount; fw.nOut++; fw.cps.add(t.to); touchCp(t.to, fw.label, 'in', t.amount); }
+    if (tw) { tw.in += t.amount; tw.nIn++; tw.cps.add(t.from); touchCp(t.from, tw.label, 'out', t.amount); }
+  });
+  /* คู่ค้าที่ wallet อื่นก็ใช้ด้วย (สำหรับขอบส้ม/เชื่อมกับ) ในโหมดเลือก wallet */
+  if (selWallet) txs.filter(t => t._indirect).forEach(t => {
+    const other = tracked.has(t.from) ? t.to : t.from, w = tracked.get(tracked.has(t.from) ? t.from : t.to);
+    const c = cp.get(other); if (c) c.wallets.add(w);
+  });
+
+  /* ----- KPI ----- */
+  const totIn = ws.reduce((s, w) => s + w.in, 0), totOut = ws.reduce((s, w) => s + w.out, 0);
+  const shared = [...cp.values()].filter(c => c.wallets.size > 1).length;
+  $('kpis').innerHTML = [
+    [L('k_tracked'), RAW.wallets.length],
+    [L('k_count'), txs.filter(t => !t._indirect).length],
+    [L('k_in', token), `<span class="in">${fmt(totIn)}</span>`],
+    [L('k_out', token), `<span class="out">${fmt(totOut)}</span>`],
+    [L('k_net'), `<span class="${totIn - totOut >= 0 ? 'in' : 'out'}">${fmt(totIn - totOut)}</span>`],
+    [L('k_cp'), cp.size],
+    [L('k_shared'), `<span style="color:var(--orange)">${shared}</span>`],
+    ...['EXCHANGE', 'DEX'].map(t => {
+      const cs = [...cp.values()].filter(c => typeOf(c.addr) === t);
+      const v = cs.reduce((s, c) => s + c.in + c.out, 0);
+      return [L('k_via', TYPE_TH[t], cs.length), `<span style="color:${TYPE_COLOR[t]}">${fmt(v)}</span>`];
+    }),
+  ].map(([k, v]) => `<div class="kpi"><div class="muted">${k}</div><div class="v">${v}</div></div>`).join('');
+
+  /* ส่วนสรุปของ wallet: แยกยอดตามประเภทคู่ค้า */
+  ws.forEach(w => { w.byType = {}; });
+  txs.forEach(t => {
+    const fw = wIdx.get(t.from), tw = wIdx.get(t.to);
+    if (fw && !tracked.has(t.to)) { const k = typeOf(t.to); fw.byType[k] = (fw.byType[k] || 0) + t.amount; }
+    if (tw && !tracked.has(t.from)) { const k = typeOf(t.from); tw.byType[k] = (tw.byType[k] || 0) + t.amount; }
+  });
+
+  /* ----- ตาราง wallet ----- */
+  $('tblWallets').innerHTML = `<tr><th>${L('th_wallet')}</th><th class="num">${L('th_in')}</th><th class="num">${L('th_out')}</th><th class="num">${L('th_net')}</th><th class="num">${L('th_cps')}</th></tr>` +
+    ws.map(w => `<tr data-addr="${esc(w.address)}" style="cursor:pointer">
+      <td><b>${esc(w.label)}</b><span class="sub addr">${short(w.address)}</span></td>
+      <td class="num in">${fmt(w.in)}<span class="sub">${w.nIn} tx</span></td>
+      <td class="num out">${fmt(w.out)}<span class="sub">${w.nOut} tx</span></td>
+      <td class="num ${w.in - w.out >= 0 ? 'in' : 'out'}">${fmt(w.in - w.out)}</td>
+      <td class="num">${w.cps.size}</td></tr>
+      <tr class="bytype"><td colspan="5" class="muted" style="font-size:12px;padding-top:0;white-space:normal">${Object.entries(w.byType).sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `<span class="badge" style="${badgeStyle(k)}">${TYPE_TH[k]}</span> ${fmt(v)}`).join(' &nbsp; ') || '-'}</td></tr>`).join('');
+
+  /* ----- Top counterparties ----- */
+  const topN = Math.max(5, +$('fTop').value || 30);
+  const fType = $('fType').value;
+  const cpList = [...cp.values()].filter(c => !fType || typeOf(c.addr) === fType).sort((a, b) => (b.in + b.out) - (a.in + a.out));
+  const topSet = new Set(cpList.slice(0, topN).map(c => c.addr));
+  cpList.filter(c => c.wallets.size > 1).forEach(c => topSet.add(c.addr)); /* คู่ค้าร่วมแสดงเสมอ */
+  $('tblCp').innerHTML = `<tr><th>${L('th_cp')}</th><th>${L('th_type')}</th><th class="num">${L('th_recv')}</th><th class="num">${L('th_sent')}</th><th>${L('th_linked')}</th></tr>` +
+    cpList.slice(0, 100).map(c => `<tr data-addr="${esc(c.addr)}" style="cursor:pointer">
+      <td class="addr"><span class="cp">${c.wallets.size > 1 ? icon('link', 'var(--orange)') : ''}<a href="${SCAN}address/${esc(c.addr)}" target="_blank">${esc(nameOf(c.addr))}</a><span class="copy" data-copy="${esc(c.addr)}" title="Copy address">${icon('copy')}</span></span></td>
+      <td>${badge(c.addr)}</td>
+      <td class="num out">${fmt(c.in)}</td><td class="num in">${fmt(c.out)}</td>
+      <td>${esc([...c.wallets].join(', '))}</td></tr>`).join('');
+
+  /* ----- Graph ----- */
+  const edges = new Map();
+  txs.forEach(t => {
+    if (!(tracked.has(t.from) || topSet.has(t.from)) || !(tracked.has(t.to) || topSet.has(t.to))) return;
+    if (fType && !(tracked.has(t.from) && tracked.has(t.to)) &&
+        typeOf(tracked.has(t.from) ? t.to : t.from) !== fType) return;
+    const k = t.from + '>' + t.to;
+    const e = edges.get(k) || { from: t.from, to: t.to, amount: 0, n: 0, indirect: !!(selWallet && t._indirect) };
+    e.amount += t.amount; e.n++; edges.set(k, e);
+  });
+  const nodeIds = new Set();
+  edges.forEach(e => { nodeIds.add(e.from); nodeIds.add(e.to); });
+  if (selWallet) nodeIds.add(selWallet);
+  const maxAmt = Math.max(1, ...[...edges.values()].map(e => e.amount));
+
+  const nodes = [...nodeIds].map(a => {
+    const isT = tracked.has(a), c = cp.get(a), multi = c && c.wallets.size > 1, t = typeOf(a);
+    /* Wallet ที่ติดตาม = กล่องขาว ตัวดำ · ตอนเลือกแท็บ wallet ตัวอื่นเป็นแบบขอบขาว (พื้นดำ ตัวขาว) */
+    const outline = isT && selWallet && a !== selWallet;
+    const color = isT ? (outline ? '#121212' : '#ffffff') : TYPE_COLOR[t];
+    const border = isT ? '#ffffff' : multi ? '#ffa53d' : color;
+    const shape = isT ? 'box' : t === 'EXCHANGE' ? 'square' : t === 'DEX' ? 'diamond' : t === 'CONTRACT' ? 'triangle' : 'dot';
+    return {
+      id: a, label: nameOf(a), shape, size: isT ? 22 : 10 + Math.min(15, (c ? c.n : 0)),
+      borderWidth: isT ? 2 : multi ? 4 : 1, chosen: false, opacity: 1,
+      color: { background: color, border, highlight: { background: color, border }, hover: { background: color, border } },
+      font: { color: isT ? (outline ? '#ffffff' : '#101010') : '#b3b3b3', size: isT ? 16 : 12, face: 'Helvetica Neue, helvetica, arial, sans-serif', bold: isT },
+      shapeProperties: { borderRadius: 4 }, margin: isT ? { top: 6, bottom: 6, left: 10, right: 10 } : undefined,
+      title: isT ? `${tracked.get(a)}\n${a}` : `[${TYPE_TH[t]}] ${nameOf(a)}\n${a}\n${L('th_recv')} ${fmt(c ? c.in : 0)} / ${L('th_sent')} ${fmt(c ? c.out : 0)} ${token}\n${L('th_linked')}: ${c ? [...c.wallets].join(', ') : '-'}`,
+    };
+  });
+  const visEdges = [...edges.values()].map((e, i) => ({
+    id: 'e' + i, from: e.from, to: e.to, arrows: 'to', chosen: false,
+    width: 1 + 9 * Math.sqrt(e.amount / maxAmt),
+    color: { color: e.indirect ? '#b3b3b355' : tracked.has(e.to) ? '#57d98a99' : '#ff6b6b99', opacity: 1 },
+    dashes: e.indirect,
+    title: `${nameOf(e.from)} → ${nameOf(e.to)}\n${fmt(e.amount)} ${token} (${e.n} tx)`,
+    smooth: { enabled: true, type: 'curvedCW', roundness: 0.15 },
+  }));
+  $('graphInfo').textContent = `${nodes.length} nodes · ${visEdges.length} links`;
+  const capKey = [cpList.length, topSet.size, txs.length].join('|');
+  if (capKey !== renderInner.capKey) {
+    renderInner.capKey = capKey;
+    if (cpList.length > topSet.size) dlog(L('cap_graph', topSet.size, cpList.length));
+    if (cpList.length > 100) dlog(L('cap_cp', cpList.length));
+  }
+
+  renderRecent = () => renderTxTable(txs, nameOf);
+  if (typeof vis === 'undefined') { renderTxTable(txs, nameOf); return; }
+  const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(visEdges) };
+  const options = {
+    physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -60, springLength: 120 },
+               /* คำนวณตำแหน่งให้เสร็จก่อนแสดง (ไม่โชว์ภาพเคลื่อนไหว) แล้วหยุด physics */
+               stabilization: { enabled: true, iterations: 150, updateInterval: 1000, fit: true } },
+    /* ลดความไวการซูม (Magic Mouse / trackpad ส่ง scroll event ถี่มาก) */
+    interaction: { hover: true, tooltipDelay: 100, zoomSpeed: 0.15, zoomView: true, dragView: true, navigationButtons: false, keyboard: false },
+  };
+  if (network) network.destroy();
+  network = new vis.Network($('graph'), data, options);
+  /* หยุด physics ถาวรหลังจัดตำแหน่งเสร็จ: กราฟนิ่ง ลาก node แล้วอยู่ตรงนั้น ไม่เด้ง/หมุน */
+  network.once('stabilizationIterationsDone', () => {
+    network.setOptions({ physics: false });
+    network.fit({ animation: false });
+  });
+  /* จำกัดระดับซูม */
+  network.on('zoom', () => {
+    const sc = network.getScale();
+    if (sc > 2.5) network.moveTo({ scale: 2.5 });
+    else if (sc < 0.2) network.moveTo({ scale: 0.2 });
+  });
+  /* Focus: node ที่เลือก + ที่เชื่อมกันชัด ที่เหลือจาง 20% ชื่อ node ที่เลือกตัวหนาสีขาว (ไม่มีวงแหวน) */
+  const baseFont = new Map(nodes.map(n => [n.id, n.font]));
+  graphFocus = id => {
+    if (!network || !data.nodes.get(id || '') && id) id = null;
+    const near = new Set(id ? [id, ...network.getConnectedNodes(id)] : []);
+    const nearE = new Set(id ? network.getConnectedEdges(id) : []);
+    data.nodes.update(nodes.map(n => {
+      const f = baseFont.get(n.id);
+      const tw = tracked.has(n.id);
+      return { id: n.id, opacity: !id || near.has(n.id) ? 1 : 0.2,
+        font: n.id === id && !tw ? Object.assign({}, f, { color: '#ffffff', size: 13, bold: true }) : f };
+    }));
+    data.edges.update(visEdges.map(e => ({ id: e.id, color: Object.assign({}, e.color, { opacity: !id || nearE.has(e.id) ? 1 : 0.12 }) })));
+    if (id) network.selectNodes([id]); else network.unselectAll();
+  };
+  network.on('click', p => {
+    focusAddr = p.nodes[0] || null;
+    graphFocus(focusAddr);
+    if (focusAddr) {
+      const c = cp.get(focusAddr);
+      showCard(focusAddr, c ? `${L('th_recv')} ${fmt(c.in)} · ${L('th_sent')} ${fmt(c.out)} ${token} · ${c.n} tx · ${L('th_linked')} ${[...c.wallets].join(', ')}` : '');
+    } else hideCard();
+    renderRecent();
+  });
+  network.on('doubleClick', p => {
+    if (p.nodes[0]) window.open(SCAN + 'address/' + p.nodes[0], '_blank');
+    else if (!p.edges.length) resetZoom(); /* ดับเบิลคลิกพื้นที่ว่าง = Reset Zoom */
+  });
+
+  document.querySelectorAll('tr[data-addr]').forEach(tr => tr.onclick = () => {
+    focusAddr = tr.dataset.addr;
+    const c = cp.get(focusAddr);
+    showCard(focusAddr, c ? `${L('th_recv')} ${fmt(c.in)} · ${L('th_sent')} ${fmt(c.out)} ${token} · ${c.n} tx` : '');
+    if (nodeIds.has(focusAddr)) { graphFocus(focusAddr); network.focus(focusAddr, { scale: 1, animation: false }); }
+    else graphFocus(null);
+    renderTxTable(txs, nameOf);
+  });
+
+  if (focusAddr && nodeIds.has(focusAddr)) graphFocus(focusAddr);
+  renderTxTable(txs, nameOf);
+}
+let renderRecent = () => {};
+let graphFocus = () => {};
+let exportCtx = { list: [], nameOf: a => a };
+
+/* ===== หน้าต่างเลือกช่วง Export ===== */
+const DAY = 864e5;
+const dayStart = ts => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const pad2 = n => String(n).padStart(2, '0');
+const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
+const parseDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : NaN; };
+const dShortX = ts => new Date(ts).toLocaleDateString(LANG === 'en' ? 'en-US' : 'th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+const monthName = key => { const [y, m] = key.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(LANG === 'en' ? 'en-US' : 'th-TH', { month: 'long', year: 'numeric' }); };
+const xs = { fmt: 'xlsx', range: '7', anchor: 'active', month: '', from: '', to: '' };
+let xResult = null;
+
+/* รายการก่อนกรองช่วงเวลา: ใช้ Token / ขั้นต่ำ / แท็บ wallet / node ที่เลือกเหมือนหน้าจอ */
+function exportBase() {
+  const token = $('fToken').value, min = +$('fMin').value || 0;
+  let l = RAW.txs.filter(t => t.token === token && t.amount >= min);
+  if (selWallet) l = l.filter(t => t.from === selWallet || t.to === selWallet);
+  if (focusAddr) l = l.filter(t => t.from === focusAddr || t.to === focusAddr);
+  return l.sort((a, b) => b.ts - a.ts);
+}
+
+function computeExport() {
+  const base = exportBase();
+  const notes = [];
+  if (!base.length) return { list: [], label: '', notes: [[L('xr_nodata'), 'bad']] };
+  const newest = base[0].ts, oldest = base[base.length - 1].ts;
+  let list = [], label = '', from = null, to = null;
+  const r = xs.range;
+  if (r === 'view') { list = exportCtx.list.slice(); label = L('xr_view'); }
+  else if (r === 'all') { list = base; label = L('xr_all'); }
+  else if (r === 'month') {
+    const [y, m] = (xs.month || dayKey(newest).slice(0, 7)).split('-').map(Number);
+    from = new Date(y, m - 1, 1).getTime(); to = new Date(y, m, 1).getTime() - 1;
+    list = base.filter(t => t.ts >= from && t.ts <= to); label = monthName(`${y}-${pad2(m)}`);
+  } else if (r === 'custom') {
+    let a = parseDay(xs.from), b = parseDay(xs.to);
+    if (!isFinite(a) || !isFinite(b)) return { list: [], label: '', notes: [[L('xr_nodate'), 'bad']] };
+    if (a > b) { [a, b] = [b, a]; notes.push([L('xr_swapped'), 'warn']); }
+    from = a; to = b + DAY - 1;
+    list = base.filter(t => t.ts >= from && t.ts <= to); label = `${dShortX(from)} – ${dShortX(to)}`;
+  } else {
+    const n = +r;
+    if (xs.anchor === 'active') {
+      const days = [...new Set(base.map(t => dayKey(t.ts)))].slice(0, n);
+      const keep = new Set(days);
+      list = base.filter(t => keep.has(dayKey(t.ts)));
+      label = L('xr_activeN', n);
+      if (days.length < n) notes.push([L('xr_fewdays', days.length, n), 'warn']);
+    } else {
+      const today = dayStart(Date.now());
+      const hasRecent = base.some(t => t.ts >= today - (n - 1) * DAY);
+      let end = today;
+      if (xs.anchor === 'latest' || (xs.anchor === 'auto' && !hasRecent)) end = dayStart(newest);
+      if (xs.anchor === 'auto' && !hasRecent) notes.push([L('xr_fallback', n, dShortX(newest)), 'warn']);
+      from = end - (n - 1) * DAY; to = end + DAY - 1;
+      list = base.filter(t => t.ts >= from && t.ts <= to);
+      label = L('xr_daysN', n) + ' · ' + (end === today ? L('xr_today') : L('xr_latest'));
+    }
+  }
+  if (from !== null && list.length) {
+    if (from < dayStart(oldest)) notes.push([L('xr_before', dShortX(oldest)), '']);
+    if (to > dayStart(newest) + DAY - 1 && to < dayStart(Date.now()) + DAY - 1) notes.push([L('xr_after', dShortX(newest)), '']);
+  }
+  const reachesOld = r === 'all' || (from !== null && from <= oldest) || (xs.anchor === 'active' && /^\d+$/.test(r) && list.length === base.length);
+  if (RAW.diag && RAW.diag.capped && reachesOld) notes.push([L('xr_capped'), 'warn']);
+  if (!list.length) notes.push([L('xr_empty'), 'bad']);
+  if (xs.fmt === 'pdf' && list.length > 1000) notes.push([L('xr_big', fmt(list.length)), 'warn']);
+  return { list, label, notes };
+}
+
+function renderExportDlg() {
+  $('xFmt').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === xs.fmt)));
+  const isN = ['1', '7', '30', '90'].includes(xs.range);
+  $('xSkipWrap').hidden = !isN;
+  $('xSkip').checked = xs.anchor === 'active';
+  $('xRangeSel').value = xs.range === 'month' ? 'm:' + xs.month : xs.range;
+  const wallet = selWallet ? (RAW.wallets.find(w => w.address === selWallet) || {}).label : L('x_allw');
+  $('xScope').textContent = [$('fToken').value, L('xr_wallet', wallet),
+    focusAddr ? L('xr_node', exportCtx.nameOf(focusAddr)) : '', +$('fMin').value ? `${L('f_min')} ${$('fMin').value}` : '']
+    .filter(Boolean).join(' · ');
+  xResult = computeExport();
+  const { list, notes } = xResult;
+  if (list.length && xs.range !== 'custom') {
+    const lo = Math.min(...list.map(t => t.ts)), hi = Math.max(...list.map(t => t.ts));
+    $('xFrom').value = dayKey(lo); $('xTo').value = dayKey(hi);
+  }
+  const span = list.length ? `${dShortX(Math.min(...list.map(t => t.ts)))} – ${dShortX(Math.max(...list.map(t => t.ts)))}` : '';
+  const extra = xs.anchor === 'active' && isN ? ` (${L('xr_activeN', xs.range)})` : '';
+  $('xPreview').innerHTML = `<b>${esc(L('xr_count', fmt(list.length)))}</b>` +
+    (span ? `<span class="note">${esc(span + extra)}</span>` : '') +
+    notes.map(([msg, cls]) => `<span class="note ${cls}">${esc(msg)}</span>`).join('');
+  $('xGo').textContent = L('xr_go', xs.fmt === 'pdf' ? 'PDF' : 'Excel');
+  $('xGo').disabled = !list.length;
+}
+
+function openExport(format) {
+  const base = exportBase();
+  xs.fmt = format;
+  const months = {};
+  base.forEach(t => { const k = dayKey(t.ts).slice(0, 7); months[k] = (months[k] || 0) + 1; });
+  const keys = Object.keys(months).sort().reverse();
+  $('xRangeSel').innerHTML =
+    `<option value="view">${esc(L('xr_view_now'))}</option>` +
+    `<option value="1">${esc(L('xr_last1'))}</option>` +
+    [7, 30, 90].map(n => `<option value="${n}">${esc(L('xr_lastN', n))}</option>`).join('') +
+    `<option value="all">${esc(L('xr_all'))}</option>` +
+    (keys.length ? `<optgroup label="${esc(L('xr_months'))}">` +
+      keys.map(k => `<option value="m:${k}">${esc(monthName(k))} (${fmt(months[k])})</option>`).join('') + '</optgroup>' : '') +
+    `<option value="custom">${esc(L('xr_custom2'))}</option>`;
+  if (xs.range === 'month' && !keys.includes(xs.month)) xs.range = '7';
+  if (base.length) {
+    $('xFrom').min = $('xTo').min = dayKey(base[base.length - 1].ts);
+    $('xFrom').max = $('xTo').max = dayKey(base[0].ts);
+  }
+  renderExportDlg();
+  $('xdlg').classList.add('open');
+  setTimeout(() => $('xGo').focus(), 0);
+}
+function closeExport() { $('xdlg').classList.remove('open'); }
+
+/* Export: ส่งรายการที่กรองอยู่ (ทั้งหมด ไม่ใช่แค่ 200 แถวที่เห็น) ให้ Server สร้างไฟล์ */
+function exportTx(format, list, rangeLabel) {
+  const { nameOf } = exportCtx;
+  list = list.slice().sort((a, b) => b.ts - a.ts);
+  if (!list.length) { toast(L('x_none'), true); return; }
+  const token = $('fToken').value;
+  const tracked = new Set(RAW.wallets.map(w => w.address));
+  /* ทิศทางเทียบกับ wallet ที่เลือก (หรือ wallet ที่ติดตามทั้งหมด) */
+  const dirOf = t => {
+    if (selWallet) return t.to === selWallet && t.from !== selWallet ? 'IN' : t.from === selWallet && t.to !== selWallet ? 'OUT' : '';
+    const fi = tracked.has(t.from), ti = tracked.has(t.to);
+    return ti && !fi ? 'IN' : fi && !ti ? 'OUT' : '';
+  };
+  const rows = list.map(t => {
+    const dir = dirOf(t);
+    return { time: fmtDate(t.ts), fromN: nameOf(t.from), from: t.from, toN: nameOf(t.to), to: t.to,
+             amt: dir === 'OUT' ? -t.amount : t.amount, dir, hash: t.hash };
+  });
+  const walletObj = selWallet ? RAW.wallets.find(w => w.address === selWallet) : null;
+  const wallet = walletObj ? walletObj.label : L('x_allw');
+  const dShort = ts => new Date(ts).toLocaleDateString(LANG === 'en' ? 'en-US' : 'th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  const oldest = list[list.length - 1].ts, newest = list[0].ts;
+  const fType = $('fType');
+  const title = L('x_title', token);
+  const subtitle = 'Wallet ' + wallet + (walletObj ? ' · ' + walletObj.address : '') + (focusAddr ? ' · ' + L('filter_lbl') + ' ' + nameOf(focusAddr) : '');
+  const meta = [
+    [L('f_range'), `${dShort(oldest)} – ${dShort(newest)}` + (rangeLabel ? ` (${rangeLabel})` : '')],
+    [L('x_filters'), `${L('f_min')} ${+$('fMin').value || 0} · ${fType.value ? fType.options[fType.selectedIndex].text : L('x_alltypes')}`],
+    [L('x_count'), L('x_rows', list.length)],
+    [L('x_generated'), fmtDate(Date.now())],
+  ];
+  const labels = { time: L('th_time'), from: L('th_from'), to: L('th_to'),
+    fromAddr: `${L('th_from')} (Address)`, toAddr: `${L('th_to')} (Address)`, amount: L('th_amount'),
+    total: L('x_total'), inflow: L('k_in', token).replace(/\s*\(.*\)$/, ''), outflow: L('k_out', token).replace(/\s*\(.*\)$/, ''), net: L('k_net') };
+  const fileTitle = `Tron ${token} ${wallet}` + (focusAddr ? ` - ${nameOf(focusAddr)}` : '');
+  /* เปิดแท็บรอไว้ก่อน (ต้องเปิดตอนคลิก ไม่งั้นโดนบล็อก popup) */
+  const win = window.open('', '_blank');
+  const btns = [$('btnXlsx'), $('btnPdf')];
+  btns.forEach(b => b.disabled = true);
+  $('exportMsg').textContent = L('x_making', format.toUpperCase(), list.length);
+  dlog(L('x_log', format, list.length));
+  google.script.run
+    .withSuccessHandler(url => {
+      btns.forEach(b => b.disabled = false);
+      dlog(L('x_done', format), 'ok');
+      if (win && !win.closed) { win.location.href = url; $('exportMsg').textContent = ''; toast(L('x_downloaded')); }
+      else {
+        $('exportMsg').innerHTML = '';
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.textContent = L('x_click', format.toUpperCase());
+        $('exportMsg').appendChild(a);
+      }
+    })
+    .withFailureHandler(e => {
+      btns.forEach(b => b.disabled = false);
+      if (win && !win.closed) win.close();
+      $('exportMsg').textContent = '';
+      dlog(L('x_fail') + e.message, 'error'); toast(L('x_fail') + e.message, true);
+    })
+    .exportTxs(JSON.stringify({ format, lang: LANG, token, title, subtitle, meta, labels, rows, fileTitle }));
+}
+
+function renderTxTable(txs, nameOf) {
+  txs = txs.filter(t => !t._indirect);
+  const all = (focusAddr ? txs.filter(t => t.from === focusAddr || t.to === focusAddr) : txs)
+    .slice().sort((a, b) => b.ts - a.ts);
+  exportCtx = { list: all, nameOf };
+  const list = all.slice(0, 200);
+  const fd = $('fDays');
+  $('txCount').textContent = L('tx_count', list.length, all.length, fd.options[fd.selectedIndex].text);
+  if (all.length > 200 && renderTxTable.lastCap !== all.length) {
+    renderTxTable.lastCap = all.length;
+    dlog(L('cap_tx', all.length));
+  }
+  $('txFilter').innerHTML = focusAddr ? `${L('filter_lbl')} ${esc(nameOf(focusAddr))} <a href="#" id="clr">${L('clear')}</a>` : '';
+  if (focusAddr) $('clr').onclick = e => { e.preventDefault(); focusAddr = null; graphFocus(null); hideCard(); renderTxTable(txs, nameOf); };
+  $('tblTx').innerHTML = `<tr><th>${L('th_time')}</th><th>${L('th_from')}</th><th>${L('th_to')}</th><th class="num">${L('th_amount')}</th><th>Tx</th></tr>` +
+    list.map(t => `<tr><td>${fmtDate(t.ts)}</td>
+      <td class="addr">${esc(nameOf(t.from))} ${RAW.wallets.some(w => w.address === t.from) ? '' : badge(t.from)}</td>
+      <td class="addr">${esc(nameOf(t.to))} ${RAW.wallets.some(w => w.address === t.to) ? '' : badge(t.to)}</td>
+      <td class="num">${fmt(t.amount)} ${esc(t.token)}</td>
+      <td><a href="${SCAN}transaction/${esc(t.hash)}" target="_blank">${short(t.hash)}</a></td></tr>`).join('') +
+    (list.length ? '' : `<tr><td colspan="5" class="muted">${L('none')}</td></tr>`);
+}
+
+['fToken', 'fDays', 'fMin', 'fType', 'fTop'].forEach(id => $(id).addEventListener('change', () => { focusAddr = null; render(); }));
+$('btnReload').onclick = load;
+$('btnXlsx').onclick = () => openExport('xlsx');
+$('btnPdf').onclick = () => openExport('pdf');
+$('xFmt').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; xs.fmt = b.dataset.v; renderExportDlg(); });
+$('xRangeSel').onchange = () => {
+  const v = $('xRangeSel').value;
+  if (v.startsWith('m:')) { xs.range = 'month'; xs.month = v.slice(2); } else xs.range = v;
+  if (v === 'custom') { xs.from = $('xFrom').value; xs.to = $('xTo').value; }
+  renderExportDlg();
+};
+const toCustom = () => { xs.range = 'custom'; xs.from = $('xFrom').value; xs.to = $('xTo').value; renderExportDlg(); };
+$('xFrom').onchange = toCustom;
+$('xTo').onchange = toCustom;
+$('xSkip').onchange = () => { xs.anchor = $('xSkip').checked ? 'active' : 'auto'; renderExportDlg(); };
+$('xCancel').onclick = closeExport;
+$('xdlg').addEventListener('click', e => { if (e.target === $('xdlg')) closeExport(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('xdlg').classList.contains('open')) closeExport(); });
+$('xGo').onclick = () => {
+  if (!xResult || !xResult.list.length) return;
+  closeExport();
+  exportTx(xs.fmt, xResult.list, xResult.label);
+};
+$('btnLog').onclick = () => $('log').classList.toggle('open');
+$('btnLogClose').onclick = () => $('log').classList.remove('open');
+function resetZoom() { if (network) network.fit({ animation: false }); }
+$('btnFit').onclick = resetZoom;
+/* กด 0 หรือ F = Reset Zoom (ยกเว้นตอนพิมพ์ในช่อง input) */
+document.addEventListener('keydown', e => {
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.metaKey || e.ctrlKey) return;
+  if (e.key === '0' || e.key.toLowerCase() === 'f') resetZoom();
+});
+$('cardCopy').onclick = () => cardCtx && copyText(cardCtx.addr);
+$('cardSave').onclick = saveCard;
+$('cardInName').addEventListener('keydown', e => { if (e.key === 'Enter') saveCard(); });
+$('cardClose').onclick = () => { hideCard(); graphFocus(null); };
+/* ไอคอน copy ในตาราง */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-copy]');
+  if (el) { e.stopPropagation(); copyText(el.dataset.copy); }
+}, true);
+document.querySelectorAll('select').forEach(enhanceSelect);
+document.querySelectorAll('.lang button').forEach(b => b.onclick = () => applyLang(b.dataset.lang));
+applyLang(LANG);
+load();
+</script>
+</body>
+</html>

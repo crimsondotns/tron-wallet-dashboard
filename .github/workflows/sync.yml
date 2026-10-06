@@ -1,0 +1,57 @@
+name: Sync & Deploy
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # ทุก 10 นาที (GitHub อาจดีเลย์ได้บ้างตอนคนใช้เยอะ)
+  workflow_dispatch: {}        # กดรันเองได้ที่แท็บ Actions
+  push:
+    branches: [main]
+    paths: ['site/**', 'scripts/**', '.github/workflows/**', '!site/data/**']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch transactions from Tronscan
+        run: node scripts/sync.mjs
+        env:
+          TRONSCAN_API_KEY: ${{ secrets.TRONSCAN_API_KEY }}
+          GAS_URL: ${{ vars.GAS_URL }}
+          SYNC_BUDGET_MIN: '25'
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/data/dashboard.json data/state.json
+          if git diff --cached --quiet; then echo "no changes"; else
+            git commit -m "data: sync $(date -u +'%Y-%m-%d %H:%M')"
+            git pull --rebase --autostash
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
