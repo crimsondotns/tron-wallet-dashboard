@@ -1,0 +1,10 @@
+{
+  "name": "xcap-insight",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm --filter web lint"
+  },
+  "packageManager": "pnpm@12.3.4"
+}
