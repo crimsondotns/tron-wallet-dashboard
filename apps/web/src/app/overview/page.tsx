@@ -52,7 +52,7 @@ export default async function Overview({ searchParams }: {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = claims?.claims.email as string | undefined;
-  const { data: walletRows } = await supabase.from("wallets").select("id, address, label, chain_id").order("created_at");
+  const { data: walletRows, error: walletsErr } = await supabase.from("wallets").select("id, address, label, chain_id").order("created_at");
   const wallets = walletRows ?? [];
   // Always one wallet: the one in the URL, else the first.
   const wallet = wallets.some((w) => w.id === sp.wallet) ? sp.wallet! : wallets[0]?.id ?? "";
@@ -63,21 +63,21 @@ export default async function Overview({ searchParams }: {
   const to = isoDay(today);
   const from = range === "all" ? "2015-01-01" : isoDay(new Date(today.getTime() - (Number(range) - 1) * 864e5));
 
-  const { data: summaryRaw } = wallets.length
+  const { data: summaryRaw, error: summaryErr } = wallets.length
     ? await supabase.rpc("overview_summary", { p_from: from, p_to: to, p_token: sp.token || null, p_wallets: wallet ? [wallet] : null })
-    : { data: null };
+    : { data: null, error: null };
   const s = summaryRaw as Summary | null;
   const token = s?.token ?? "";
 
   // Money map: per wallet × counterparty totals, plus names/types for every node.
-  const { data: graphRaw } = tab === "map" && token
+  const { data: graphRaw, error: graphErr } = tab === "map" && token
     ? await supabase.rpc("overview_graph", { p_from: from, p_to: to, p_token: token, p_wallets: wallet ? [wallet] : null })
-    : { data: null };
+    : { data: null, error: null };
   const graph = (graphRaw ?? []) as GraphEdge[];
-  const { data: graphLabels } = graph.length
+  const { data: graphLabels, error: graphLabelsErr } = graph.length
     ? await supabase.from("address_labels").select("address, name, type").in("address", [...new Set(graph.map((e) => e.address))])
-    : { data: [] };
-  const { data: myRole } = tab === "map" ? await supabase.from("org_members").select("role").eq("user_id", String(claims?.claims.sub)).limit(1).maybeSingle() : { data: null };
+    : { data: [], error: null };
+  const { data: myRole, error: roleErr } = tab === "map" ? await supabase.from("org_members").select("role").eq("user_id", String(claims?.claims.sub)).limit(1).maybeSingle() : { data: null, error: null };
 
   // Transfers for the recent list (summary) or the paged table (transactions tab).
   const txLimit = tab === "tx" ? PAGE : 8;
@@ -95,21 +95,24 @@ export default async function Overview({ searchParams }: {
   txQuery = tab === "tx" && sort === "amount"
     ? txQuery.order("amount", { ascending: asc }).order("ts", { ascending: false })
     : txQuery.order("ts", { ascending: tab === "tx" && asc });
-  const { data: txs, count: txCount } = token && tab !== "map"
+  const { data: txs, count: txCount, error: txErr } = token && tab !== "map"
     ? await txQuery.range(txOffset, txOffset + txLimit - 1)
-    : { data: [], count: 0 };
+    : { data: [], count: 0, error: null };
   const rows = txs ?? [];
   const totalPages = Math.max(1, Math.ceil((txCount ?? 0) / PAGE));
 
   // Names for every counterparty shown on this page.
   const shown = [...new Set([...(s?.top ?? []).map((c) => c.address), ...rows.map((r) => (r.dir === "IN" ? r.from_addr : r.to_addr))])];
-  const { data: labelRows } = shown.length
+  const { data: labelRows, error: labelsErr } = shown.length
     ? await supabase.from("address_labels").select("address, name, type").in("address", shown)
-    : { data: [] };
+    : { data: [], error: null };
   // Choices for the counterparty filter: our wallets, then named labels.
-  const { data: namedRows } = tab === "tx"
+  const { data: namedRows, error: namedErr } = tab === "tx"
     ? await supabase.from("address_labels").select("address, name").neq("name", "").order("name").limit(500)
-    : { data: [] };
+    : { data: [], error: null };
+  // Any failed query shows an error state instead of a misleading "no data" state.
+  const loadErr = walletsErr ?? summaryErr ?? graphErr ?? graphLabelsErr ?? roleErr ?? txErr ?? labelsErr ?? namedErr;
+  if (loadErr) console.error("[overview] query failed:", loadErr.code, loadErr.message);
   const cpNamed = [
     ...wallets.filter((w) => w.label && !selected.some((x) => x.id === w.id)).map((w) => ({ address: w.address, name: w.label })),
     ...(namedRows ?? []).filter((l) => !wallets.some((w) => w.address === l.address)),
@@ -235,7 +238,9 @@ export default async function Overview({ searchParams }: {
         </nav>
       </div>
 
-      {!wallets.length ? (
+      {loadErr ? (
+        <p className="error" role="alert">{t.ov.errLoad}</p>
+      ) : !wallets.length ? (
         <p className="card subdued">{t.ov.noWallets} <Link className="link" href="/">{t.nav.wallets}</Link></p>
       ) : (
         <>

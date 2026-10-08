@@ -6,6 +6,7 @@ import { ConnectionDetail, type ProviderOption } from "@/components/ConnectionDe
 import { fmt } from "@/i18n/config";
 import type { Dict } from "@/i18n/dict";
 import { getT } from "@/i18n/server";
+import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/server";
 
 // Providers the browser sync supports today, per chain.
@@ -21,15 +22,18 @@ export default async function Connections({ searchParams }: { searchParams: Prom
   const { chain: picked, error, saved, deleted } = await searchParams;
   const { t } = await getT();
   const SUPPORTED = supported(t);
-  const errors: Record<string, string> = { no_org: t.conn.errNoOrg, https: t.conn.errHttps, no_conn: t.conn.errNoConn };
+  const errors: Record<string, string> = { no_org: t.conn.errNoOrg, https: t.conn.errHttps, no_conn: t.conn.errNoConn, chain: t.conn.errChain };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = (claims?.claims.email as string | undefined) ?? "";
-  const [{ data: chains }, { data: conns }] = await Promise.all([
+  const [{ data: chains, error: chainsErr }, { data: conns, error: connsErr }] = await Promise.all([
     supabase.from("chains").select("id, name").order("family", { ascending: false }).order("name"),
     supabase.from("provider_connections").select("chain_id, provider, endpoint_url, api_key_secret_id"),
   ]);
-  const list = (chains ?? []).map((c) => {
+  const loadErr = chainsErr ?? connsErr;
+  if (loadErr) console.error("[connections] load failed:", loadErr.code, loadErr.message);
+  // Only chains with a sync provider are offered; the rest stay hidden until supported.
+  const list = (chains ?? []).filter((c) => isSupportedChain(c.id) && SUPPORTED[c.id]).map((c) => {
     const conn = conns?.find((x) => x.chain_id === c.id);
     const options = SUPPORTED[c.id];
     const label = options?.find((o) => o.value === conn?.provider)?.label;
@@ -47,9 +51,17 @@ export default async function Connections({ searchParams }: { searchParams: Prom
         <h1>{t.conn.title}</h1>
         <p className="subdued small">{t.conn.intro}</p>
       </div>
-      {error && <p className="error" role="alert">{errors[error] ?? error}</p>}
+      {error && <p className="error" role="alert">{errors[error] ?? t.common.errGeneric}</p>}
       {saved && <p className="notice" role="status">{fmt(t.conn.saved, { chain: saved.toUpperCase() })}</p>}
       {deleted && <p className="notice" role="status">{fmt(t.conn.deleted, { chain: deleted.toUpperCase() })}</p>}
+
+      {loadErr && <p className="error" role="alert">{t.common.errGeneric}</p>}
+      {!loadErr && !conns?.length && !!list.length && (
+        <section className="card stack-sm empty-conn">
+          <h3>{t.conn.emptyTitle}</h3>
+          <p className="subdued small">{t.conn.emptyBody}</p>
+        </section>
+      )}
 
       <div className="md">
         <nav className="md-list" aria-label={t.common.chain}>

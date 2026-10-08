@@ -7,6 +7,7 @@ import { SyncRunner } from "@/components/SyncRunner";
 import { WalletRowMenu } from "@/components/WalletRowMenu";
 import { fmt as tf } from "@/i18n/config";
 import { getT } from "@/i18n/server";
+import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/server";
 import { addWallet } from "./actions";
 
@@ -17,7 +18,7 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().sl
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   const { t } = await getT();
-  const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate };
+  const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate, chain: t.wallets.errChain };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = claims?.claims.email as string | undefined;
@@ -59,7 +60,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       </div>
       {!!wallets?.length && <SyncRunner wallets={wallets} />}
 
-      {error && <p className="error" role="alert">{errors[error] ?? error}</p>}
+      {error && <p className="error" role="alert">{errors[error] ?? t.common.errGeneric}</p>}
 
       {!org ? (
         <p className="error">{t.wallets.noOrg}</p>
@@ -71,7 +72,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
               name="chain_id"
               label={t.common.chain}
               defaultValue="tron"
-              options={(chains ?? []).map((c) => ({ value: c.id, label: c.name, icon: c.id }))}
+              options={(chains ?? []).filter((c) => isSupportedChain(c.id)).map((c) => ({ value: c.id, label: c.name, icon: c.id }))}
             />
             <input className="input grow" name="address" placeholder={t.wallets.addressPh} required aria-label={t.common.address} />
             <input className="input" name="label" placeholder={t.wallets.labelPh} aria-label={t.wallets.label} />

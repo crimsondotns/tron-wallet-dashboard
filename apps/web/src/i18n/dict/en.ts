@@ -2,6 +2,13 @@ import type { Dict } from "./th";
 
 export const en = {
   common: {
+    errGeneric: "Something went wrong. Please try again.",
+    errTitle: "Something went wrong",
+    retry: "Try again",
+    notFoundTitle: "Page not found",
+    notFoundBody: "The link may be wrong or the page has moved.",
+    goHome: "Back to home",
+    loading: "Loading…",
     cancel: "Cancel",
     save: "Save",
     delete: "Delete",
@@ -55,6 +62,7 @@ export const en = {
     errExists: "This email already has an account. Sign in instead.",
   },
   wallets: {
+    errChain: "This network isn't supported yet.",
     count: "{wallets} wallets · {chains} chains",
     noOrg: "No workspace found for this account. Try signing out and back in.",
     addressPh: "Address (T… or 0x…)",
@@ -108,6 +116,9 @@ export const en = {
     failed: "Sync failed: {msg}",
   },
   conn: {
+    errChain: "This network isn't supported yet.",
+    emptyTitle: "No connections yet",
+    emptyBody: "Choose a provider below and save to start syncing your wallets.",
     title: "Connections",
     intro: "Pick a chain to set up your own provider and API key, then test it right away. Data is fetched directly from your browser.",
     saved: "{chain} connection saved",
@@ -193,6 +204,7 @@ export const en = {
     out: "Out",
   },
   ov: {
+    errLoad: "Couldn't load this data. Please try again.",
     title: "Overview",
     tabSummary: "Summary",
     tabMap: "Money map",

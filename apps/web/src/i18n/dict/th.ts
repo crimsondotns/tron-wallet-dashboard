@@ -1,6 +1,13 @@
 // Source dictionary. Other locales must match its shape (checked by `satisfies Dict`).
 export const th = {
   common: {
+    errGeneric: "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง",
+    errTitle: "มีบางอย่างผิดพลาด",
+    retry: "ลองอีกครั้ง",
+    notFoundTitle: "ไม่พบหน้านี้",
+    notFoundBody: "ลิงก์อาจไม่ถูกต้องหรือหน้านี้ถูกย้ายไปแล้ว",
+    goHome: "กลับหน้าหลัก",
+    loading: "กำลังโหลด…",
     cancel: "ยกเลิก",
     save: "บันทึก",
     delete: "ลบ",
@@ -54,6 +61,7 @@ export const th = {
     errExists: "อีเมลนี้มีบัญชีแล้ว เข้าสู่ระบบแทน",
   },
   wallets: {
+    errChain: "ยังไม่รองรับเครือข่ายนี้",
     count: "{wallets} กระเป๋า · {chains} เครือข่าย",
     noOrg: "ยังไม่พบพื้นที่ทำงานของบัญชีนี้ ลองออกจากระบบแล้วเข้าใหม่",
     addressPh: "ที่อยู่กระเป๋า (T… หรือ 0x…)",
@@ -107,6 +115,9 @@ export const th = {
     failed: "ซิงก์ไม่สำเร็จ: {msg}",
   },
   conn: {
+    errChain: "ยังไม่รองรับเครือข่ายนี้",
+    emptyTitle: "ยังไม่มีการเชื่อมต่อ",
+    emptyBody: "เลือกผู้ให้บริการด้านล่างแล้วบันทึก เพื่อเริ่มซิงก์กระเป๋าของคุณ",
     title: "การเชื่อมต่อ",
     intro: "เลือก chain เพื่อตั้งค่าผู้ให้บริการและ API key ของคุณเอง แล้วทดสอบได้ทันที ระบบดึงข้อมูลจาก browser ของคุณโดยตรง",
     saved: "บันทึกการเชื่อมต่อ {chain} แล้ว",
@@ -192,6 +203,7 @@ export const th = {
     out: "ออก",
   },
   ov: {
+    errLoad: "โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง",
     title: "ภาพรวม",
     tabSummary: "สรุป",
     tabMap: "แผนผังเงิน",

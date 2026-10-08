@@ -2,6 +2,13 @@ import type { Dict } from "./th";
 
 export const ja = {
   common: {
+    errGeneric: "エラーが発生しました。もう一度お試しください。",
+    errTitle: "エラーが発生しました",
+    retry: "再試行",
+    notFoundTitle: "ページが見つかりません",
+    notFoundBody: "リンクが間違っているか、ページが移動した可能性があります。",
+    goHome: "ホームに戻る",
+    loading: "読み込み中…",
     cancel: "キャンセル",
     save: "保存",
     delete: "削除",
@@ -55,6 +62,7 @@ export const ja = {
     errExists: "このメールアドレスは登録済みです。ログインしてください。",
   },
   wallets: {
+    errChain: "このネットワークにはまだ対応していません。",
     count: "{wallets} ウォレット · {chains} チェーン",
     noOrg: "このアカウントのワークスペースが見つかりません。一度ログアウトして再ログインしてください。",
     addressPh: "アドレス（T… または 0x…）",
@@ -108,6 +116,9 @@ export const ja = {
     failed: "同期に失敗しました：{msg}",
   },
   conn: {
+    errChain: "このネットワークにはまだ対応していません。",
+    emptyTitle: "接続はまだありません",
+    emptyBody: "下でプロバイダーを選んで保存すると、ウォレットの同期が始まります。",
     title: "接続",
     intro: "チェーンを選んで、自分のプロバイダーと API key を設定し、すぐにテストできます。データはブラウザから直接取得されます。",
     saved: "{chain} の接続を保存しました",
@@ -193,6 +204,7 @@ export const ja = {
     out: "出金",
   },
   ov: {
+    errLoad: "データを読み込めませんでした。もう一度お試しください。",
     title: "概要",
     tabSummary: "サマリー",
     tabMap: "資金マップ",

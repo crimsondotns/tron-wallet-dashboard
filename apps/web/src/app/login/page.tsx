@@ -11,8 +11,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     // Supabase confirms the email before redirecting here, so a failed auto sign-in
     // (e.g. link opened in another browser) usually still leaves the account usable.
     confirm: t.auth.errConfirm,
-    "Invalid login credentials": t.auth.errInvalid,
-    "Email not confirmed": t.auth.errNotConfirmed,
+    invalid: t.auth.errInvalid,
+    not_confirmed: t.auth.errNotConfirmed,
   };
   return (
     <AuthShell mode="login">
@@ -20,7 +20,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <h1>{t.auth.signIn}</h1>
         <p className="subdued small">{t.auth.noAccount} <Link className="link" href="/register">{t.auth.signUp}</Link></p>
       </div>
-      <Notice error={error && (errors[error] ?? error)} message={message && messages[message]} />
+      <Notice error={error && (errors[error] ?? t.common.errGeneric)} message={message && messages[message]} />
       <form action={signIn} className="stack">
         <label className="field">
           <span>{t.auth.email}</span>

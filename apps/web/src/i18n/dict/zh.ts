@@ -2,6 +2,13 @@ import type { Dict } from "./th";
 
 export const zh = {
   common: {
+    errGeneric: "出错了，请重试。",
+    errTitle: "出错了",
+    retry: "重试",
+    notFoundTitle: "页面不存在",
+    notFoundBody: "链接可能有误，或页面已移动。",
+    goHome: "返回首页",
+    loading: "加载中…",
     cancel: "取消",
     save: "保存",
     delete: "删除",
@@ -55,6 +62,7 @@ export const zh = {
     errExists: "该邮箱已注册，请直接登录。",
   },
   wallets: {
+    errChain: "暂不支持该网络。",
     count: "{wallets} 个钱包 · {chains} 条链",
     noOrg: "未找到此账户的工作区。请尝试退出后重新登录。",
     addressPh: "地址（T… 或 0x…）",
@@ -108,6 +116,9 @@ export const zh = {
     failed: "同步失败：{msg}",
   },
   conn: {
+    errChain: "暂不支持该网络。",
+    emptyTitle: "还没有连接",
+    emptyBody: "在下方选择服务商并保存，即可开始同步钱包。",
     title: "连接",
     intro: "选择一条链，设置你自己的服务商和 API key，并立即测试。数据直接从你的浏览器获取。",
     saved: "{chain} 连接已保存",
@@ -193,6 +204,7 @@ export const zh = {
     out: "流出",
   },
   ov: {
+    errLoad: "数据加载失败，请重试。",
     title: "概览",
     tabSummary: "摘要",
     tabMap: "资金图谱",
