@@ -39,13 +39,22 @@ export async function syncWallet(
     };
 
     try {
-      // 1) Newer than what we already have.
+      // 1) Newer than what we already have. newest_ts only moves (advance_sync_head) once this
+      //    pass has reached it; if the run stops halfway, the next run re-fetches the whole gap.
       const knownUntil = cur.newest_ts ? Date.parse(cur.newest_ts) : null;
       if (knownUntil) {
+        let newest = knownUntil, reached = false;
         for (let offset = 0; Date.now() < deadline; offset += provider.pageSize) {
           const page = await provider.fetchPage(cfg, wallet.address, kind, { before: null, offset });
-          if (page.items.length) await push(page.items, null, cur.done);
-          if (page.exhausted || page.oldest === null || page.oldest <= knownUntil) break;
+          if (page.items.length) await push(page.items, null, false);
+          for (const r of page.items) if (r.ts > newest) newest = r.ts;
+          if (page.exhausted || page.oldest === null || page.oldest <= knownUntil) { reached = true; break; }
+        }
+        if (reached && newest > knownUntil) {
+          const { error: e } = await db.rpc("advance_sync_head", {
+            p_wallet: wallet.id, p_kind: kind, p_newest_ts: new Date(newest).toISOString(),
+          });
+          if (e) throw e;
         }
       }
       // 2) Backfill to the very first transaction. If a whole page shares one timestamp, page by offset.
