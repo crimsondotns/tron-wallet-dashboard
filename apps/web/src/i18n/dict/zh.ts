@@ -18,6 +18,8 @@ export const zh = {
     clickToCopy: "点击复制",
     viewOn: "在 {name} 上查看",
     language: "语言",
+    timeZone: "时区",
+    timeZoneSearch: "搜索时区，例如 Shanghai",
     close: "关闭",
     chain: "链",
     address: "地址",

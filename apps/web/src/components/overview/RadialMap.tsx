@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
-import { useLocale, useT } from "@/i18n/client";
+import { useLocale, useT, useTimeZone } from "@/i18n/client";
+import { dayStartIso } from "@/i18n/tz";
 import { CopyText } from "../CopyText";
 import { ExplorerLink } from "../ExplorerLink";
 import { Dropdown } from "../Dropdown";
@@ -93,7 +94,7 @@ export function RadialMap({ wallets, others = NO_OTHERS, edges, labels, token, c
   labels: Record<string, Label>;
   token: string;
   canEdit: boolean;
-  from?: string; // range start (YYYY-MM-DD) for the node card's transfer list
+  from?: string; // range start (YYYY-MM-DD, user's time zone) for the node card's transfer list
 }) {
   const t = useT();
   const tag = LOCALE_TAGS[useLocale()];
@@ -512,6 +513,7 @@ function NodeCard({ node, token, num, label, canEdit, onClose, walletIds, from }
 }) {
   const t = useT();
   const locale = useLocale();
+  const tz = useTimeZone();
   // Latest transfers between our wallet(s) and this node (for a wallet node: its own latest).
   const [txs, setTxs] = useState<CardTx[] | null>(null);
   const ids = walletIds.join(","); // stable across parent re-renders (hover etc.)
@@ -521,10 +523,10 @@ function NodeCard({ node, token, num, label, canEdit, onClose, walletIds, from }
     q = node.zone === "wallet"
       ? q.eq("wallet_id", node.id)
       : q.in("wallet_id", ids.split(",")).or(`and(dir.eq.IN,from_addr.eq.${node.address}),and(dir.eq.OUT,to_addr.eq.${node.address})`);
-    if (from) q = q.gte("ts", `${from}T00:00:00Z`);
+    if (from) q = q.gte("ts", dayStartIso(from, tz));
     void q.order("ts", { ascending: false }).limit(CARD_TX).then(({ data }) => { if (!off) setTxs((data ?? []) as CardTx[]); });
     return () => { off = true; };
-  }, [node.id, node.zone, node.address, token, from, ids]);
+  }, [node.id, node.zone, node.address, token, from, tz, ids]);
   return (
     <aside className="map-card" aria-label={node.name}>
       <div className="map-card-head">
@@ -546,7 +548,7 @@ function NodeCard({ node, token, num, label, canEdit, onClose, walletIds, from }
           : <ul>
               {txs.map((x) => (
                 <li key={x.tx_hash + x.dir + x.ts}>
-                  <span className="map-card-time">{fmtDateTime(x.ts, locale)}</span>
+                  <span className="map-card-time">{fmtDateTime(x.ts, locale, tz)}</span>
                   <span className={`map-card-amt ${x.dir === "IN" ? "in" : "out"}`}>{x.dir === "IN" ? "+" : "−"}{num(Number(x.amount))}</span>
                   <span className="map-card-hash"><CopyText text={x.tx_hash} display={`${x.tx_hash.slice(0, 6)}…${x.tx_hash.slice(-4)}`} /><ExplorerLink chain={node.chain} kind="tx" value={x.tx_hash} label={t.common.viewOn} /></span>
                 </li>

@@ -18,6 +18,8 @@ export const en = {
     clickToCopy: "Click to copy",
     viewOn: "View on {name}",
     language: "Language",
+    timeZone: "Time zone",
+    timeZoneSearch: "Search time zones, e.g. Bangkok",
     close: "Close",
     chain: "Chain",
     address: "Address",

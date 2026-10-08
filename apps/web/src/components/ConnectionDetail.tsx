@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { saveConnection } from "@/app/connections/actions";
 import { createClient } from "@/lib/supabase/client";
-import { useLocale, useT } from "@/i18n/client";
+import { useLocale, useT, useTimeZone } from "@/i18n/client";
 import { diagnose, reportText, stepDefs, type Report, type Step } from "@/lib/sync/diagnose";
 import { PROVIDERS } from "@/lib/sync/engine";
 import { ApiKeyField } from "./ApiKeyField";
@@ -22,6 +22,7 @@ export function ConnectionDetail({ chain, email, options, saved, wallets, sample
 }) {
   const t = useT();
   const locale = useLocale();
+  const tz = useTimeZone();
   const [provider, setProvider] = useState(saved?.provider ?? options[0].value);
   const [endpoint, setEndpoint] = useState(saved?.endpoint ?? "");
   const [apiKey, setApiKey] = useState("");
@@ -43,7 +44,7 @@ export function ConnectionDetail({ chain, email, options, saved, wallets, sample
         const { data } = await createClient().rpc("my_provider_key", { p_chain: chain });
         key = data?.[0]?.api_key ?? null;
       }
-      await diagnose(p, { apiKey: key, endpoint: endpoint.trim() || null }, address.trim(), setReport, { t, locale });
+      await diagnose(p, { apiKey: key, endpoint: endpoint.trim() || null }, address.trim(), setReport, { t, locale, tz });
     } finally {
       setRunning(false);
     }

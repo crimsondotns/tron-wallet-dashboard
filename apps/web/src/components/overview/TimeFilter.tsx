@@ -2,23 +2,20 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useT } from "@/i18n/client";
+import { useT, useTimeZone } from "@/i18n/client";
+import { dayEndIso, dayIn, dayStartIso } from "@/i18n/tz";
 import { useContainScroll } from "../useContainScroll";
 import { usePopoverPlacement } from "../usePopoverPlacement";
 
-// ISO instant ↔ <input type="date"> value (viewer's local day). A start date means 00:00 of
-// that day and an end date the end of that day, both in the viewer's time zone.
-export const toLocalInput = (iso: string | null) => {
-  if (!iso || Number.isNaN(Date.parse(iso))) return "";
-  const d = new Date(iso), p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
-export const dayStartIso = (day: string) => (day ? new Date(`${day}T00:00:00`).toISOString() : "");
-export const dayEndIso = (day: string) => (day ? new Date(`${day}T23:59:59.999`).toISOString() : "");
+// ISO instant ↔ <input type="date"> value, as a calendar day in the user's time zone. A start
+// date means 00:00 of that day and an end date the end of that day, both in that zone.
+export const toLocalInput = (iso: string | null, tz: string) => (!iso || Number.isNaN(Date.parse(iso)) ? "" : dayIn(iso, tz));
+export { dayEndIso, dayStartIso };
 
 // Funnel button in the Time header: from/to date popover that writes ?start=&end= (ISO).
 export function TimeFilter({ start, end }: { start: string; end: string }) {
   const t = useT();
+  const tz = useTimeZone();
   const router = useRouter();
   const path = usePathname();
   const params = useSearchParams();
@@ -58,13 +55,13 @@ export function TimeFilter({ start, end }: { start: string; end: string }) {
           <form className="stack-sm" onSubmit={(e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
-            const a = dayStartIso(String(f.get("start") ?? "")), b = dayEndIso(String(f.get("end") ?? ""));
+            const a = dayStartIso(String(f.get("start") ?? ""), tz), b = dayEndIso(String(f.get("end") ?? ""), tz);
             if (a && b && a > b) { setBad(true); return; }
             go(a, b);
           }}>
             <span className="th-pop-title">{t.ov.filterTime}</span>
-            <label className="th-pop-dt"><span>{t.ov.expFrom}</span><input className="input" type="date" name="start" defaultValue={toLocalInput(start)} /></label>
-            <label className="th-pop-dt"><span>{t.ov.expTo}</span><input className="input" type="date" name="end" defaultValue={toLocalInput(end)} /></label>
+            <label className="th-pop-dt"><span>{t.ov.expFrom}</span><input className="input" type="date" name="start" defaultValue={toLocalInput(start, tz)} /></label>
+            <label className="th-pop-dt"><span>{t.ov.expTo}</span><input className="input" type="date" name="end" defaultValue={toLocalInput(end, tz)} /></label>
             <p className={bad ? "error small" : "subdued caption"}>{bad ? t.ov.expBadRange : t.ov.expPeriodHint}</p>
             <div className="th-pop-actions">
               <button type="button" className="btn-ghost btn-sm" onClick={() => go("", "")}>{t.ov.clear}</button>

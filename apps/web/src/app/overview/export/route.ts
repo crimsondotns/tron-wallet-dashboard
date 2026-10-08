@@ -2,7 +2,8 @@ import ExcelJS from "exceljs";
 import { RANGES, type Range } from "@/components/overview/ranges";
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
 import { buildPdf } from "@/lib/export/pdf";
-import { getT } from "@/i18n/server";
+import { getT, getTimeZone } from "@/i18n/server";
+import { addDays, dayIn, dayStartIso, toWallClock, tzOffsetLabel } from "@/i18n/tz";
 import { explorerLink } from "@/lib/explorer";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,7 +12,6 @@ import { createClient } from "@/lib/supabase/server";
 // counterparties are computed from the exported transfers, so they match the filters. Runs as the signed-in user, so RLS limits it to their org.
 const MAX_ROWS = 100_000;
 const BATCH = 1000; // PostgREST's default max rows per request
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 type Row = { ts: string; wallet_id: string; dir: string; amount: number; token_symbol: string; from_addr: string; to_addr: string; tx_hash: string; status: string };
 
 export async function GET(req: Request) {
@@ -31,8 +31,11 @@ export async function GET(req: Request) {
 
   const range: Range = (RANGES as readonly string[]).includes(sp.get("range") ?? "") ? (sp.get("range") as Range) : "all";
   const today = new Date();
-  const to = isoDay(today);
-  const from = range === "all" ? "2015-01-01" : isoDay(new Date(today.getTime() - (Number(range) - 1) * 864e5));
+  // Days and times in the user's time zone (Excel cells get that zone's wall-clock time).
+  const tz = await getTimeZone();
+  const tzName = `${tz} (${tzOffsetLabel(tz, today.getTime())})`;
+  const to = dayIn(today, tz);
+  const from = range === "all" ? "2015-01-01" : addDays(to, -(Number(range) - 1));
   const { data: summaryRaw } = await supabase.rpc("overview_summary", { p_from: from, p_to: to, p_token: sp.get("token") || null, p_wallets: [w.id] });
   const token = (summaryRaw as { token: string | null } | null)?.token;
   if (!token) return new Response("No data", { status: 404 });
@@ -48,7 +51,7 @@ export async function GET(req: Request) {
   const rows: Row[] = [];
   for (let off = 0; off < MAX_ROWS; off += BATCH) {
     let q = supabase.from("transfers").select("ts, wallet_id, dir, amount, token_symbol, from_addr, to_addr, tx_hash, status")
-      .eq("wallet_id", w.id).eq("token_symbol", token).gte("ts", start ?? `${from}T00:00:00Z`);
+      .eq("wallet_id", w.id).eq("token_symbol", token).gte("ts", start ?? dayStartIso(from, tz));
     if (end) q = q.lte("ts", end);
     if (cp) q = q.or(`and(dir.eq.IN,from_addr.ilike.*${cp}*),and(dir.eq.OUT,to_addr.ilike.*${cp}*)`);
     if (min !== null) q = q.gte("amount", min);
@@ -71,7 +74,7 @@ export async function GET(req: Request) {
     g.tx++; agg.set(c, g);
   }
   const s = { in: sIn, out: sOut, tx: rows.length, top: [...agg.values()].sort((x, y) => y.in + y.out - (x.in + x.out)).slice(0, 20) };
-  const fmtTs = (v: string) => fmtDateTime(v, locale);
+  const fmtTs = (v: string) => fmtDateTime(v, locale, tz);
   const period = start || end ? `${start ? fmtTs(start) : "…"} – ${end ? fmtTs(end) : "…"}` : range === "all" ? t.ov.expAllTime : `${from} – ${to}`;
 
   // Names: our wallets first, then labels (looked up in chunks to keep URLs short).
@@ -91,9 +94,9 @@ export async function GET(req: Request) {
   const line = (r: Row) => {
     const c = other(r), l = names.get(c);
     const amount = Number(r.amount) * (r.dir === "IN" ? 1 : -1);
-    return [new Date(r.ts), walletName, r.dir === "IN" ? t.test.in : t.test.out, l?.name ?? "", c, typeLabel(l?.type), amount, r.token_symbol, r.status, r.tx_hash, explorerLink(w.chain_id, "tx", r.tx_hash)?.url ?? ""] as const;
+    return [toWallClock(Date.parse(r.ts), tz), walletName, r.dir === "IN" ? t.test.in : t.test.out, l?.name ?? "", c, typeLabel(l?.type), amount, r.token_symbol, r.status, r.tx_hash, explorerLink(w.chain_id, "tx", r.tx_hash)?.url ?? ""] as const;
   };
-  const stamp = `${((useNames && w.label) || w.address.slice(0, 8)).replace(/[^\p{L}\p{N}_-]+/gu, "_")}_${token}_${isoDay(today)}`;
+  const stamp = `${((useNames && w.label) || w.address.slice(0, 8)).replace(/[^\p{L}\p{N}_-]+/gu, "_")}_${token}_${to}`;
 
   if (format === "pdf") {
     const PDF_MAX = 5000; // ~170 pages; the full list is in the Excel export
@@ -106,7 +109,8 @@ export async function GET(req: Request) {
         [t.common.address, w.address],
         [t.ov.expRange, period],
         ...(cp || min !== null || max !== null ? [[t.ov.expFilters, [cp && `${t.test.colCounterparty}: ${cp}`, min !== null && `≥ ${min}`, max !== null && `≤ ${max}`].filter(Boolean).join(" · ")] as [string, string]] : []),
-        [t.ov.expCreated, fmtDateTime(today, locale)],
+        [t.ov.expCreated, fmtDateTime(today, locale, tz)],
+        [t.common.timeZone, tzName],
       ],
       kpis: [[t.ov.kpiIn, `+${amt(Number(s?.in ?? 0))}`], [t.ov.kpiOut, `−${amt(Number(s?.out ?? 0))}`], [t.ov.kpiNet, `${net < 0 ? "−" : "+"}${amt(Math.abs(net))}`], [t.ov.tabTx, amt(Number(s?.tx ?? 0))]],
       topTitle: t.ov.top,
@@ -116,7 +120,7 @@ export async function GET(req: Request) {
       txHead: [t.test.colTime, t.test.colDir, t.ov.expCpName, t.test.colCounterparty, `${t.test.colAmount} (${token})`, t.ov.expTx],
       lines: rows.slice(0, PDF_MAX).map((r) => {
         const c = other(r);
-        return { time: fmtDateTime(r.ts, locale), dir: r.dir === "IN" ? "IN" : "OUT", dirLabel: r.dir === "IN" ? t.test.in : t.test.out, name: names.get(c)?.name || "—", address: c,
+        return { time: fmtDateTime(r.ts, locale, tz), dir: r.dir === "IN" ? "IN" : "OUT", dirLabel: r.dir === "IN" ? t.test.in : t.test.out, name: names.get(c)?.name || "—", address: c,
           amount: Number(r.amount), amountText: `${r.dir === "IN" ? "+" : "−"}${amt(Number(r.amount))}`, tx: `${r.tx_hash.slice(0, 8)}…${r.tx_hash.slice(-6)}` };
       }),
       note: rows.length > PDF_MAX ? fmt(t.ov.expCapped, { n: PDF_MAX.toLocaleString(tag) }) : undefined,
@@ -140,6 +144,7 @@ export async function GET(req: Request) {
   sum.addRow([t.common.address, w.address]).getCell(1).font = bold;
   sum.addRow([t.ov.token, token]).getCell(1).font = bold;
   sum.addRow([t.ov.expRange, period]).getCell(1).font = bold;
+  sum.addRow([t.common.timeZone, tzName]).getCell(1).font = bold;
   if (cp || min !== null || max !== null) sum.addRow([t.ov.expFilters, [cp && `${t.test.colCounterparty}: ${cp}`, min !== null && `≥ ${min}`, max !== null && `≤ ${max}`].filter(Boolean).join(" · ")]).getCell(1).font = bold;
   sum.addRow([]);
   for (const [k, v] of [[t.ov.kpiIn, Number(s?.in ?? 0)], [t.ov.kpiOut, Number(s?.out ?? 0)], [t.ov.kpiNet, Number(s?.in ?? 0) - Number(s?.out ?? 0)], [t.ov.tabTx, Number(s?.tx ?? 0)]] as const) {
@@ -158,7 +163,7 @@ export async function GET(req: Request) {
   // Sheet 2: every transfer.
   const tx = wb.addWorksheet(t.ov.tabTx, { views: [{ state: "frozen", ySplit: 1 }] });
   tx.columns = [{ width: 20 }, { width: 16 }, { width: 8 }, { width: 22 }, { width: 38 }, { width: 12 }, { width: 18 }, { width: 8 }, { width: 12 }, { width: 66 }, { width: 14 }];
-  tx.addRow(head).font = bold;
+  tx.addRow([`${head[0]} (${tz})`, ...head.slice(1)]).font = bold;
   tx.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: head.length } };
   for (const r of rows) {
     const v = line(r);

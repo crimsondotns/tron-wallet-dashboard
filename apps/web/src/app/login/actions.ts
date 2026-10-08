@@ -1,8 +1,9 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getLocale } from "@/i18n/server";
+import { isTimeZone, TZ_COOKIE } from "@/i18n/tz";
 import { createClient } from "@/lib/supabase/server";
 
 function creds(form: FormData) {
@@ -22,6 +23,9 @@ export async function signIn(form: FormData) {
   // which auth email templates read from user_metadata.locale.
   const locale = await getLocale();
   if (data.user?.user_metadata?.locale !== locale) await supabase.auth.updateUser({ data: { locale } });
+  // A time zone chosen on another device follows the account (display preference only).
+  const jar = await cookies(), tz = data.user?.user_metadata?.tz;
+  if (!isTimeZone(jar.get(TZ_COOKIE)?.value) && isTimeZone(tz)) jar.set(TZ_COOKIE, tz, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   redirect("/");
 }
 

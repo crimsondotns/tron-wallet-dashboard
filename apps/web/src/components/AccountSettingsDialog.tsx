@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useT } from "@/i18n/client";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { TimeZonePicker } from "./TimeZonePicker";
 
 // Account settings (opened from the account menu). Changes apply immediately, so there is
 // only a Close button.
@@ -29,6 +30,7 @@ export function AccountSettingsDialog({ open, onClose, email }: { open: boolean;
         <dl className="settings-list">
           <div><dt>{t.auth.email}</dt><dd className="subdued">{email}</dd></div>
           <div><dt>{t.common.language}</dt><dd><LanguageSwitcher /></dd></div>
+          <div><dt>{t.common.timeZone}</dt><dd><TimeZonePicker /></dd></div>
         </dl>
         <div className="confirm-actions">
           <button type="button" className="btn-tertiary" onClick={() => ref.current?.close()}>{t.common.close}</button>

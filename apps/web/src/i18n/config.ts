@@ -12,10 +12,11 @@ export function fmt(s: string, vars: Record<string, string | number> = {}): stri
   return s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
 }
 
-// Full date + 24h time, e.g. "Saturday, October 3, 2026 14:05", "วันเสาร์ที่ 3 ตุลาคม 2569 14:05".
-export function fmtDateTime(ms: number | string | Date, locale: Locale) {
+// Full date + 24h time in the user's time zone, e.g. "Saturday, October 3, 2026 14:05",
+// "วันเสาร์ที่ 3 ตุลาคม 2569 14:05". Always pass the user's tz (getTimeZone / useTimeZone).
+export function fmtDateTime(ms: number | string | Date, locale: Locale, timeZone: string) {
   const d = new Date(ms), tag = LOCALE_TAGS[locale];
-  const date = d.toLocaleDateString(tag, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const time = d.toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const date = d.toLocaleDateString(tag, { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone });
+  const time = d.toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
   return `${date} ${time}`;
 }

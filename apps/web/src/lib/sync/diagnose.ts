@@ -52,10 +52,10 @@ export async function diagnose(
   cfg: ProviderConfig,
   address: string,
   onUpdate: (r: Report) => void,
-  { t, locale }: { t: Dict; locale: Locale },
+  { t, locale, tz }: { t: Dict; locale: Locale; tz: string },
 ): Promise<Report> {
   const d = t.diag;
-  const date = (ms: number) => fmtDateTime(ms, locale);
+  const date = (ms: number) => fmtDateTime(ms, locale, tz);
   const fast: ProviderConfig = { ...cfg, retries: 0 };
   const r: Report = { steps: stepDefs(t).map((s) => ({ ...s, status: "pending" })), verdict: null, sample: [] };
   const emit = () => onUpdate({ ...r, steps: r.steps.map((s) => ({ ...s })) });

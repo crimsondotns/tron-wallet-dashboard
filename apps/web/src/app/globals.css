@@ -432,6 +432,7 @@ html[data-locale="ja"] body { word-break: auto-phrase; }
 .settings-list dd { margin: 0; font-size: 14px; min-width: 0; }
 .settings-list dd.subdued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-list .lang-switch { width: 180px; }
+.settings-list .tz-switch { width: 240px; max-width: 60vw; }
 
 /* ---------- Click-to-copy value ---------- */
 .copy-text { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 8px; margin: -4px -8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-base); font: 400 14px/1.4 var(--font-mono); word-break: normal; }

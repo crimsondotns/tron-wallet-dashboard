@@ -17,6 +17,8 @@ export const th = {
     clickToCopy: "คลิกเพื่อคัดลอก",
     viewOn: "ดูบน {name}",
     language: "ภาษา",
+    timeZone: "เขตเวลา",
+    timeZoneSearch: "ค้นหาเขตเวลา เช่น Bangkok",
     close: "ปิด",
     chain: "เครือข่าย",
     address: "ที่อยู่กระเป๋า",

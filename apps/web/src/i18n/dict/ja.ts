@@ -18,6 +18,8 @@ export const ja = {
     clickToCopy: "クリックしてコピー",
     viewOn: "{name} で表示",
     language: "言語",
+    timeZone: "タイムゾーン",
+    timeZoneSearch: "タイムゾーンを検索（例: Tokyo）",
     close: "閉じる",
     chain: "チェーン",
     address: "アドレス",

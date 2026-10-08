@@ -16,7 +16,8 @@ import { OverviewFilters } from "@/components/overview/OverviewFilters";
 import { RadialMap, type GraphEdge, type Label } from "@/components/overview/RadialMap";
 import { RANGES, type Range } from "@/components/overview/ranges";
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
-import { getT } from "@/i18n/server";
+import { addDays, dayIn, dayStartIso } from "@/i18n/tz";
+import { getT, getTimeZone } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
 
 type Summary = {
@@ -27,7 +28,6 @@ type Summary = {
 };
 type Tab = "summary" | "map" | "tx";
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
 export default async function Overview({ searchParams }: {
   searchParams: Promise<{ tab?: string; wallet?: string; token?: string; range?: string; page?: string; size?: string; cp?: string; start?: string; end?: string; sort?: string; order?: string; min?: string; max?: string }>;
@@ -58,10 +58,11 @@ export default async function Overview({ searchParams }: {
   const wallet = wallets.some((w) => w.id === sp.wallet) ? sp.wallet! : wallets[0]?.id ?? "";
   const selected = wallet ? wallets.filter((w) => w.id === wallet) : wallets;
 
-  // UTC days, inclusive. "All time" starts far enough back to cover any chain history.
-  const today = new Date();
-  const to = isoDay(today);
-  const from = range === "all" ? "2015-01-01" : isoDay(new Date(today.getTime() - (Number(range) - 1) * 864e5));
+  // Calendar days in the user's time zone, inclusive. "All time" starts far enough back to cover
+  // any chain history. (The summary RPC still buckets by UTC day; raw transfers use exact instants.)
+  const tz = await getTimeZone();
+  const to = dayIn(new Date(), tz);
+  const from = range === "all" ? "2015-01-01" : addDays(to, -(Number(range) - 1));
 
   const { data: summaryRaw, error: summaryErr } = wallets.length
     ? await supabase.rpc("overview_summary", { p_from: from, p_to: to, p_token: sp.token || null, p_wallets: wallet ? [wallet] : null })
@@ -85,7 +86,7 @@ export default async function Overview({ searchParams }: {
   let txQuery = supabase.from("transfers")
     .select("id, ts, wallet_id, dir, amount, token_symbol, from_addr, to_addr, tx_hash", { count: tab === "tx" ? "exact" : undefined })
     .in("wallet_id", selected.map((w) => w.id)).eq("token_symbol", token)
-    .gte("ts", `${from}T00:00:00Z`);
+    .gte("ts", dayStartIso(from, tz));
   // Counterparty = the other side of each transfer (sender for IN, receiver for OUT); partial match.
   if (cpQ) txQuery = txQuery.or(`and(dir.eq.IN,from_addr.ilike.*${cpQ}*),and(dir.eq.OUT,to_addr.ilike.*${cpQ}*)`);
   if (startTs) txQuery = txQuery.gte("ts", startTs);
@@ -214,7 +215,7 @@ export default async function Overview({ searchParams }: {
       <tbody>
         {rows.map((r) => (
           <tr key={r.id}>
-            <td className="subdued nowrap">{fmtDateTime(r.ts, locale)}</td>
+            <td className="subdued nowrap">{fmtDateTime(r.ts, locale, tz)}</td>
             <td>{walletName(r.wallet_id)}</td>
             <td><Counterparty address={r.dir === "IN" ? r.from_addr : r.to_addr} chain={chainOf(r.wallet_id)} /></td>
             <td className={`num nowrap ${r.dir === "IN" ? "" : "subdued"}`}><span className="amount">{r.dir === "IN" ? "+" : "−"}{num(r.amount)} <TokenIcon symbol={r.token_symbol} chain={chainOf(r.wallet_id)} size={16} /> {r.token_symbol}</span></td>

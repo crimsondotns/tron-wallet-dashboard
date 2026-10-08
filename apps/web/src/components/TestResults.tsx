@@ -1,5 +1,5 @@
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
-import { useLocale, useT } from "@/i18n/client";
+import { useLocale, useT, useTimeZone } from "@/i18n/client";
 import type { Report, Step } from "@/lib/sync/diagnose";
 
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
@@ -48,6 +48,7 @@ export function TestResults({ report, steps, running, address, actions, command 
 }) {
   const t = useT();
   const locale = useLocale();
+  const tz = useTimeZone();
   const tag = LOCALE_TAGS[locale];
   const VERDICT = {
     ready: { title: t.test.readyTitle, text: t.test.readyText },
@@ -102,7 +103,7 @@ export function TestResults({ report, steps, running, address, actions, command 
                 const out = tr.from === address;
                 return (
                   <tr key={`${tr.hash}-${tr.log_index}-${tr.token_symbol}`}>
-                    <td className="small">{fmtDateTime(tr.ts, locale)}</td>
+                    <td className="small">{fmtDateTime(tr.ts, locale, tz)}</td>
                     <td>{out ? t.test.out : t.test.in}</td>
                     <td>{out ? "−" : "+"}{fmtAmount(tr.raw, tr.decimals)} {tr.token_symbol}</td>
                     <td className="mono" title={out ? tr.to : tr.from}>{short(out ? tr.to : tr.from)}</td>

@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { fmt } from "@/i18n/config";
-import { useT } from "@/i18n/client";
+import { useT, useTimeZone } from "@/i18n/client";
 import { toast } from "../Toaster";
 import { dayEndIso, dayStartIso, toLocalInput } from "./TimeFilter";
 
@@ -11,6 +11,7 @@ import { dayEndIso, dayStartIso, toLocalInput } from "./TimeFilter";
 // filters (counterparty, amount range, sort). Downloads /overview/export.
 export function ExportMenu({ wallet, rangeStart }: { wallet: string; rangeStart: string | null }) {
   const t = useT();
+  const tz = useTimeZone();
   const params = useSearchParams();
   const ref = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -40,11 +41,11 @@ export function ExportMenu({ wallet, rangeStart }: { wallet: string; rangeStart:
   }, [open]);
 
   const show = () => {
-    // Prefill the period from the page's range (local time); empty = no bound.
+    // Prefill the period from the page's range (user's time zone); empty = no bound.
     // The Time column's filter wins over the page range.
     const ts = params.get("start"), te = params.get("end");
-    setStart(ts ? toLocalInput(ts) : rangeStart ?? "");
-    setEnd(te ? toLocalInput(te) : "");
+    setStart(ts ? toLocalInput(ts, tz) : rangeStart ?? "");
+    setEnd(te ? toLocalInput(te, tz) : "");
     setOpen(true);
   };
 
@@ -55,9 +56,9 @@ export function ExportMenu({ wallet, rangeStart }: { wallet: string; rangeStart:
     if (useTable) for (const k of ["cp", "min", "max", "sort", "order"]) { const v = params.get(k); if (v) p.set(k, v); }
     p.set("wallet", wallet); p.set("format", format);
     if (!useNames) p.set("names", "0");
-    // Dates are the viewer's local days; send absolute instants (start of first day, end of last).
-    if (start) p.set("start", dayStartIso(start));
-    if (end) p.set("end", dayEndIso(end));
+    // Dates are days in the user's time zone; send absolute instants (start of first day, end of last).
+    if (start) p.set("start", dayStartIso(start, tz));
+    if (end) p.set("end", dayEndIso(end, tz));
     try {
       const res = await fetch(`/overview/export?${p}`);
       if (!res.ok) throw new Error(String(res.status));
