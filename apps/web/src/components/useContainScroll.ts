@@ -9,21 +9,24 @@ export function useContainScroll(panel: RefObject<HTMLElement | null>, scroller:
   useEffect(() => {
     const el = panel.current;
     if (!active || !el) return;
-    const blocked = (dy: number) => {
+    const canScroll = (n: HTMLElement, dy: number) =>
+      n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(n).overflowY) &&
+      (dy < 0 ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1);
+    const blocked = (dy: number, target: EventTarget | null) => {
+      // A nested scroller (e.g. a Dropdown list inside this panel) that can still move wins.
+      for (let n = target as HTMLElement | null; n && n !== el; n = n.parentElement) if (canScroll(n, dy)) return false;
       const s = scroller.current;
       if (!s) return true;
-      const atTop = s.scrollTop <= 0;
-      const atBottom = s.scrollTop + s.clientHeight >= s.scrollHeight - 1;
-      return (dy < 0 && atTop) || (dy > 0 && atBottom);
+      return !canScroll(s, dy);
     };
     const onWheel = (e: WheelEvent) => {
-      if (blocked(e.deltaY)) e.preventDefault();
+      if (blocked(e.deltaY, e.target)) e.preventDefault();
     };
     let lastY = 0;
     const onTouchStart = (e: TouchEvent) => { lastY = e.touches[0].clientY; };
     const onTouchMove = (e: TouchEvent) => {
       const y = e.touches[0].clientY;
-      if (blocked(lastY - y)) e.preventDefault();
+      if (blocked(lastY - y, e.target)) e.preventDefault();
       lastY = y;
     };
     el.addEventListener("wheel", onWheel, { passive: false });

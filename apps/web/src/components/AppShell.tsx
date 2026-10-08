@@ -1,15 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
+import { getT } from "@/i18n/server";
 import { AccountMenu } from "./AccountMenu";
 
-const NAV = [
-  { href: "/", label: "Wallets" },
-  { label: "ภาพรวม" },
-  { label: "การเชื่อมต่อ" },
-  { label: "ตั้งค่า" },
+type NavKey = "wallets" | "overview" | "connections" | "settings";
+const NAV: { key: NavKey; href?: string }[] = [
+  { key: "wallets", href: "/" },
+  { key: "overview", href: "/overview" },
+  { key: "connections", href: "/connections" },
+  { key: "settings" },
 ];
 
-export function AppShell({ email, active, children }: { email?: string; active: string; children: React.ReactNode }) {
+export async function AppShell({ email, active, children }: { email?: string; active: NavKey; children: React.ReactNode }) {
+  const { t } = await getT();
   return (
     <div className="shell">
       <aside className="side">
@@ -17,12 +20,12 @@ export function AppShell({ email, active, children }: { email?: string; active: 
           <Image src="/apple-icon.png" alt="" width={28} height={28} />
           XCap Insight
         </div>
-        <nav className="side-nav" aria-label="เมนูหลัก">
+        <nav className="side-nav" aria-label={t.nav.main}>
           {NAV.map((n) =>
             n.href ? (
-              <Link key={n.label} href={n.href} aria-current={active === n.label ? "page" : undefined}>{n.label}</Link>
+              <Link key={n.key} href={n.href} aria-current={active === n.key ? "page" : undefined}>{t.nav[n.key]}</Link>
             ) : (
-              <span key={n.label} aria-disabled="true" title="เร็ว ๆ นี้">{n.label}</span>
+              <span key={n.key} aria-disabled="true" title={t.common.soon}>{t.nav[n.key]}</span>
             ),
           )}
         </nav>

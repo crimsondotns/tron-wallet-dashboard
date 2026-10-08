@@ -1,0 +1,1 @@
+{{ $l := or .Data.locale "th" }}{{ if eq $l "en" }}Your XCap Insight verification code{{ else if eq $l "zh" }}XCap Insight 验证码{{ else if eq $l "ja" }}XCap Insight 確認コード{{ else }}รหัสยืนยัน XCap Insight{{ end }}

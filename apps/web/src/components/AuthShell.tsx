@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { getT } from "@/i18n/server";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { LiquidityField } from "./LiquidityField";
 import { LogoHero } from "./LogoHero";
 
-export function AuthShell({ mode, children }: { mode: "login" | "register"; children: React.ReactNode }) {
+export async function AuthShell({ mode, children }: { mode: "login" | "register"; children: React.ReactNode }) {
+  const { t } = await getT();
   return (
     <main className="auth">
       <aside className="auth-brand">
@@ -11,11 +14,12 @@ export function AuthShell({ mode, children }: { mode: "login" | "register"; chil
       </aside>
 
       <section className="auth-panel">
+        <div className="auth-lang"><LanguageSwitcher /></div>
         <div className="auth-form stack">
           <span className="auth-logo auth-logo-mobile">XCap Insight</span>
-          <nav className="auth-tabs" aria-label="เลือกการเข้าใช้งาน">
-            <Link href="/login" aria-current={mode === "login" ? "page" : undefined}>เข้าสู่ระบบ</Link>
-            <Link href="/register" aria-current={mode === "register" ? "page" : undefined}>สมัครสมาชิก</Link>
+          <nav className="auth-tabs" aria-label={t.auth.tabs}>
+            <Link href="/login" aria-current={mode === "login" ? "page" : undefined}>{t.auth.signIn}</Link>
+            <Link href="/register" aria-current={mode === "register" ? "page" : undefined}>{t.auth.signUp}</Link>
           </nav>
           {children}
         </div>

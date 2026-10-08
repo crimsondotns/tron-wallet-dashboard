@@ -1,9 +1,14 @@
 import { AppShell } from "@/components/AppShell";
 import { ChainIcon } from "@/components/ChainIcon";
-import { ConfirmButton } from "@/components/ConfirmDialog";
+import { CopyText } from "@/components/CopyText";
 import { Dropdown } from "@/components/Dropdown";
+import { ExplorerLink } from "@/components/ExplorerLink";
+import { SyncRunner } from "@/components/SyncRunner";
+import { WalletRowMenu } from "@/components/WalletRowMenu";
+import { fmt as tf } from "@/i18n/config";
+import { getT } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
-import { addWallet, deleteWallet } from "./actions";
+import { addWallet } from "./actions";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 const short = (a: string) => (a.length > 16 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
@@ -11,6 +16,8 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().sl
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
+  const { t } = await getT();
+  const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = claims?.claims.email as string | undefined;
@@ -38,71 +45,63 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   });
   const status = (walletId: string) => {
     const mine = cursors?.filter((c) => c.wallet_id === walletId) ?? [];
-    if (!mine.length) return <span className="status">รอดึงข้อมูล</span>;
-    if (mine.every((c) => c.done)) return <span className="status">ประวัติครบแล้ว</span>;
-    return <span className="status"><span className="bar bar-busy"><b /></span>กำลังดึงประวัติ</span>;
+    if (!mine.length) return <span className="status">{t.wallets.statusWaiting}</span>;
+    if (mine.every((c) => c.done)) return <span className="status">{t.wallets.statusDone}</span>;
+    return <span className="status"><span className="bar bar-busy"><b /></span>{t.wallets.statusBusy}</span>;
   };
   const chainCount = new Set(wallets?.map((w) => w.chain_id)).size;
 
   return (
-    <AppShell email={email} active="Wallets">
+    <AppShell email={email} active="wallets">
       <div className="page-head">
-        <h1>Wallets</h1>
-        {!!wallets?.length && <span className="subdued small">{wallets.length} wallets · {chainCount} chains</span>}
+        <h1>{t.nav.wallets}</h1>
+        {!!wallets?.length && <span className="subdued small">{tf(t.wallets.count, { wallets: wallets.length, chains: chainCount })}</span>}
       </div>
+      {!!wallets?.length && <SyncRunner wallets={wallets} />}
 
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <p className="error" role="alert">{errors[error] ?? error}</p>}
 
       {!org ? (
-        <p className="error">ยังไม่พบพื้นที่ทำงานของบัญชีนี้ ลองออกจากระบบแล้วเข้าใหม่</p>
+        <p className="error">{t.wallets.noOrg}</p>
       ) : (
         <>
           <form action={addWallet} className="card row wrap">
             <input type="hidden" name="org_id" value={org.id} />
             <Dropdown
               name="chain_id"
-              label="Chain"
+              label={t.common.chain}
               defaultValue="tron"
               options={(chains ?? []).map((c) => ({ value: c.id, label: c.name, icon: c.id }))}
             />
-            <input className="input grow" name="address" placeholder="Address (T… หรือ 0x…)" required aria-label="Address" />
-            <input className="input" name="label" placeholder="ชื่อเรียก เช่น Treasury หลัก" aria-label="ชื่อเรียก" />
-            <button className="btn-primary">เพิ่ม</button>
+            <input className="input grow" name="address" placeholder={t.wallets.addressPh} required aria-label={t.common.address} />
+            <input className="input" name="label" placeholder={t.wallets.labelPh} aria-label={t.wallets.label} />
+            <button className="btn-primary">{t.wallets.add}</button>
           </form>
 
           <section className="card">
             {!wallets?.length ? (
-              <p className="subdued">ยังไม่มี wallet ใส่ address ด้านบนเพื่อเริ่มติดตาม</p>
+              <p className="subdued">{t.wallets.empty}</p>
             ) : (
               <table>
                 <thead>
-                  <tr><th>ชื่อ</th><th>Chain</th><th>Address</th><th>เข้า / ออก 30 วัน</th><th>สถานะ</th><th /></tr>
+                  <tr><th>{t.wallets.colName}</th><th>{t.common.chain}</th><th>{t.common.address}</th><th>{t.wallets.colFlow}</th><th>{t.wallets.colStatus}</th><th /></tr>
                 </thead>
                 <tbody>
                   {wallets.map((w) => {
-                    const t = [...(totals.get(w.id) ?? new Map()).entries()];
+                    const tok = [...(totals.get(w.id) ?? new Map()).entries()];
                     return (
                       <tr key={w.id}>
                         <td><strong>{w.label || <span className="placeholder">—</span>}</strong></td>
                         <td><span className="chain"><ChainIcon chain={w.chain_id} />{chainName(w.chain_id)}</span></td>
-                        <td className="mono" title={w.address}>{short(w.address)}</td>
+                        <td><span className="addr-cell"><CopyText text={w.address} display={short(w.address)} /><ExplorerLink chain={w.chain_id} kind="address" value={w.address} label={t.common.viewOn} /></span></td>
                         <td>
-                          {!t.length ? <span className="placeholder">—</span> : t.map(([sym, v]) => (
+                          {!tok.length ? <span className="placeholder">—</span> : tok.map(([sym, v]) => (
                             <div key={sym}>+{fmt(v.in)} <span className="subdued">/ −{fmt(v.out)} {sym}</span></div>
                           ))}
                         </td>
                         <td>{status(w.id)}</td>
-                        <td>
-                          <ConfirmButton
-                            className="btn-ghost"
-                            ariaLabel={`ลบ ${w.label || w.address}`}
-                            title="ลบ wallet นี้?"
-                            body={<>เลิกติดตาม <strong className="in">{w.label || short(w.address)}</strong> และลบประวัติรายการทั้งหมดของ wallet นี้ ย้อนกลับไม่ได้</>}
-                            confirmLabel="ลบ wallet"
-                            danger
-                            action={deleteWallet}
-                            fields={{ id: w.id }}
-                          >ลบ</ConfirmButton>
+                        <td className="row-actions">
+                          <WalletRowMenu id={w.id} label={w.label ?? ""} display={w.label || short(w.address)} />
                         </td>
                       </tr>
                     );

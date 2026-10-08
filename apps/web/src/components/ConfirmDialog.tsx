@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/i18n/client";
 import { useEffect, useRef, useState } from "react";
 
 // Modal confirm built on native <dialog> (focus trap, Esc, top layer). Confirm submits
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   fields?: Record<string, string>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const t = useT();
 
   useEffect(() => {
     const d = ref.current;
@@ -50,12 +52,18 @@ export function ConfirmDialog({
         if (e.target === ref.current) ref.current.close(); // click on backdrop
       }}
     >
-      <form action={action} className="confirm-body">
+      <form
+        action={async (form) => {
+          await action(form);
+          ref.current?.close(); // success without a redirect (e.g. rename): close the dialog
+        }}
+        className="confirm-body"
+      >
         {Object.entries(fields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
         <h2 id="confirm-title">{title}</h2>
         {body && <div className="subdued small">{body}</div>}
         <div className="confirm-actions">
-          <button type="button" className="btn-tertiary" onClick={() => ref.current?.close()}>ยกเลิก</button>
+          <button type="button" className="btn-tertiary" onClick={() => ref.current?.close()}>{t.common.cancel}</button>
           <button className={danger ? "btn-danger" : "btn-primary"}>{confirmLabel}</button>
         </div>
       </form>

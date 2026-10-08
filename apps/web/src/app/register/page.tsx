@@ -1,36 +1,34 @@
 import Link from "next/link";
 import { AuthShell, Notice } from "@/components/AuthShell";
+import { getT } from "@/i18n/server";
 import { signUp } from "../login/actions";
-
-const ERRORS: Record<string, string> = {
-  mismatch: "รหัสผ่านทั้งสองช่องไม่ตรงกัน",
-  "User already registered": "อีเมลนี้มีบัญชีแล้ว เข้าสู่ระบบแทน",
-};
 
 export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
+  const { t } = await getT();
+  const errors: Record<string, string> = { mismatch: t.auth.errMismatch, "User already registered": t.auth.errExists };
   return (
     <AuthShell mode="register">
       <div className="stack-sm">
-        <h1>สร้างบัญชี</h1>
-        <p className="subdued small">มีบัญชีแล้ว? <Link className="link" href="/login">เข้าสู่ระบบ</Link></p>
+        <h1>{t.auth.createAccount}</h1>
+        <p className="subdued small">{t.auth.hasAccount} <Link className="link" href="/login">{t.auth.signIn}</Link></p>
       </div>
-      <Notice error={error && (ERRORS[error] ?? error)} />
+      <Notice error={error && (errors[error] ?? error)} />
       <form action={signUp} className="stack">
         <label className="field">
-          <span>อีเมล</span>
-          <input className="input" name="email" type="email" required autoComplete="email" placeholder="you@company.com" />
+          <span>{t.auth.email}</span>
+          <input className="input" name="email" type="email" required autoComplete="email" placeholder={t.auth.emailPh} />
         </label>
         <label className="field">
-          <span>รหัสผ่าน</span>
-          <input className="input" name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร" />
+          <span>{t.auth.password}</span>
+          <input className="input" name="password" type="password" required minLength={8} autoComplete="new-password" placeholder={t.auth.min8} />
         </label>
         <label className="field">
-          <span>ยืนยันรหัสผ่าน</span>
-          <input className="input" name="confirm" type="password" required minLength={8} autoComplete="new-password" placeholder="พิมพ์รหัสผ่านอีกครั้ง" />
+          <span>{t.auth.confirmPassword}</span>
+          <input className="input" name="confirm" type="password" required minLength={8} autoComplete="new-password" placeholder={t.auth.retype} />
         </label>
-        <button className="btn-primary">สร้างบัญชี</button>
-        <p className="placeholder caption">หลังสมัคร เราจะส่งลิงก์ยืนยันไปที่อีเมลของคุณ</p>
+        <button className="btn-primary">{t.auth.createAccount}</button>
+        <p className="placeholder caption">{t.auth.afterSignUp}</p>
       </form>
     </AuthShell>
   );
