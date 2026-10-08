@@ -1,7 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
+import * as fontkit from "fontkit";
 import PDFDocument from "pdfkit";
 
-// Ledger PDF (A4 landscape). Fonts: Noto Sans Thai (also has Latin) or Noto Sans SC/JP for
-// strings with Han/kana, fetched from Google Fonts subset to exactly the characters used.
+// Ledger PDF (A4 landscape).
 export type PdfLine = { time: string; dir: "IN" | "OUT"; dirLabel: string; name: string; address: string; amount: number; amountText: string; tx: string };
 export type PdfInput = {
   locale: string;
@@ -18,51 +20,66 @@ export type PdfInput = {
   footer: string;                   // "{page} / {pages}" style, filled per page
 };
 
-const CJK = /[぀-ヿ㐀-鿿豈-﫿]/;
-const fontCache = new Map<string, Buffer>();
-
-async function googleFont(family: string, weight: 400 | 700, text: string): Promise<Buffer> {
-  const key = `${family}:${weight}:${text}`;
+// Bundled fonts (assets/fonts, SIL OFL; traced into the export route via next.config.ts).
+// Per character: Noto Sans (Latin, − … ·), then Noto Sans Thai, then Noto Sans SC/JP (Han/kana
+// and symbols like ≥ ≤ →), else an ASCII stand-in. pdfkit embeds only the glyphs used.
+type Face = "latin" | "thai" | "cjk";
+const FONT_DIR = path.join(process.cwd(), "assets", "fonts");
+const FILES = {
+  latin: ["NotoSans-Regular.ttf", "NotoSans-Bold.ttf"],
+  thai: ["NotoSansThai-Regular.ttf", "NotoSansThai-Bold.ttf"],
+  sc: ["NotoSansSC-Regular.otf", "NotoSansSC-Bold.otf"],
+  jp: ["NotoSansJP-Regular.otf", "NotoSansJP-Bold.otf"],
+} as const;
+type Loaded = { buf: [Buffer, Buffer]; has: (cp: number) => boolean };
+const fontCache = new Map<string, Loaded>();
+function load(key: keyof typeof FILES): Loaded {
   const hit = fontCache.get(key);
   if (hit) return hit;
-  // No browser User-Agent → Google serves TrueType, which pdfkit embeds.
-  const css = await (await fetch(`https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${weight}&text=${encodeURIComponent(text)}`)).text();
-  const url = css.match(/url\(([^)]+)\)/)?.[1];
-  if (!url) throw new Error(`font ${family} unavailable`);
-  const buf = Buffer.from(await (await fetch(url)).arrayBuffer());
-  if (fontCache.size > 50) fontCache.clear();
-  fontCache.set(key, buf);
-  return buf;
+  const buf = FILES[key].map((f) => fs.readFileSync(path.join(FONT_DIR, f))) as [Buffer, Buffer];
+  const font = fontkit.create(buf[0]) as fontkit.Font;
+  const v = { buf, has: (cp: number) => font.hasGlyphForCodePoint(cp) };
+  fontCache.set(key, v);
+  return v;
 }
+const ASCII: Record<string, string> = { "≥": ">=", "≤": "<=", "→": "->", "←": "<-", "−": "-", "–": "-", "—": "-", "…": "...", "·": "-" };
 
 const C = { text: "#121212", sub: "#5f5f5f", line: "#e3e3e3", band: "#f6f6f6", gold: "#b8892c", in: "#1a7f37", out: "#c4122a" };
 
 export async function buildPdf(d: PdfInput): Promise<Buffer> {
   const all = [d.title, ...d.meta.flat(), ...d.kpis.flat(), d.topTitle, ...d.topHead, ...d.top.flat(), d.txTitle, ...d.txHead,
-    ...d.lines.flatMap((l) => [l.time, l.dirLabel, l.name, l.address, l.amountText, l.tx]), d.note ?? "", d.footer, "0123456789/ …-+XCapInsight"].join("");
-  const chars = [...new Set([...all].filter((c) => c > " "))].join("");
-  const cjkFamily = d.locale === "ja" ? "Noto Sans JP" : "Noto Sans SC";
-  const needCjk = CJK.test(chars);
-  const [r, b, cr, cb] = await Promise.all([
-    googleFont("Noto Sans Thai", 400, chars), googleFont("Noto Sans Thai", 700, chars),
-    needCjk ? googleFont(cjkFamily, 400, chars) : null, needCjk ? googleFont(cjkFamily, 700, chars) : null,
-  ]);
+    ...d.lines.flatMap((l) => [l.time, l.dirLabel, l.name, l.address, l.amountText, l.tx]), d.note ?? "", d.footer].join("");
+  const latin = load("latin"), thai = load("thai");
+  // CJK font only when some character needs it (it is the large one).
+  let cjk: Loaded | null = null;
+  for (const ch of new Set(all)) {
+    const cp = ch.codePointAt(0)!;
+    if (cp > 32 && !latin.has(cp) && !thai.has(cp)) { cjk = load(d.locale === "ja" ? "jp" : "sc"); break; }
+  }
 
   const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 36, bufferPages: true, info: { Title: d.title, Creator: "XCap Insight" } });
-  doc.registerFont("r", r); doc.registerFont("b", b);
-  if (cr && cb) { doc.registerFont("cr", cr); doc.registerFont("cb", cb); }
-  // Split into runs that each need one font (Thai/Latin vs Han/kana).
+  doc.registerFont("latin-r", latin.buf[0]); doc.registerFont("latin-b", latin.buf[1]);
+  doc.registerFont("thai-r", thai.buf[0]); doc.registerFont("thai-b", thai.buf[1]);
+  if (cjk) { doc.registerFont("cjk-r", cjk.buf[0]); doc.registerFont("cjk-b", cjk.buf[1]); }
+  const faceOf = (ch: string): Face | null => {
+    const cp = ch.codePointAt(0)!;
+    return latin.has(cp) ? "latin" : thai.has(cp) ? "thai" : cjk?.has(cp) ? "cjk" : null;
+  };
+  // Split into runs that each need one font; spaces/combining marks stay with the current run.
   const runs = (str: string) => {
-    const out: { s: string; cjk: boolean }[] = [];
-    for (const ch of str) {
-      const cjk = !!cr && CJK.test(ch), last = out[out.length - 1];
-      if (last && (last.cjk === cjk || ch === " ")) last.s += ch; else out.push({ s: ch, cjk });
+    const out: { s: string; face: Face }[] = [];
+    for (const raw of str) {
+      let ch = raw, face = faceOf(ch);
+      if (!face) { ch = ASCII[raw] ?? "?"; face = "latin"; }
+      const last = out[out.length - 1];
+      if (last && (last.face === face || ch === " " || (last.face === "thai" && thai.has(ch.codePointAt(0)!)))) last.s += ch;
+      else out.push({ s: ch, face });
     }
     return out;
   };
-  const setFont = (cjk: boolean, bold?: boolean) => doc.font(cjk ? (bold ? "cb" : "cr") : bold ? "b" : "r");
+  const setFont = (face: Face, bold?: boolean) => doc.font(`${face}-${bold ? "b" : "r"}`);
   const measure = (str: string, size: number, bold?: boolean) =>
-    runs(str).reduce((w, r) => w + setFont(r.cjk, bold).fontSize(size).widthOfString(r.s), 0);
+    runs(str).reduce((w, r) => w + setFont(r.face, bold).fontSize(size).widthOfString(r.s), 0);
   const chunks: Buffer[] = [];
   doc.on("data", (c: Buffer) => chunks.push(c));
   const done = new Promise<Buffer>((ok) => doc.on("end", () => ok(Buffer.concat(chunks))));
@@ -81,7 +98,7 @@ export async function buildPdf(d: PdfInput): Promise<Buffer> {
     let cx = o.align === "right" && o.width ? x + o.width - measure(t, size, o.bold) : x;
     doc.fillColor(o.color ?? C.text);
     for (const r of runs(t)) {
-      setFont(r.cjk, o.bold).fontSize(size).text(r.s, cx, y, { lineBreak: false });
+      setFont(r.face, o.bold).fontSize(size).text(r.s, cx, y, { lineBreak: false });
       cx += doc.widthOfString(r.s);
     }
   };

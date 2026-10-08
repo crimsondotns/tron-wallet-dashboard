@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "2.117.2",
     "d3-force": "3.0.0",
     "exceljs": "4.4.0",
+    "fontkit": "2.0.4",
     "html-to-image": "1.11.11",
     "next": "16.3.8",
     "pdfkit": "0.17.2",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@types/d3-force": "3.0.10",
+    "@types/fontkit": "2.0.9",
     "@types/node": "^20",
     "@types/pdfkit": "0.17.3",
     "@types/react": "^19",
