@@ -11,8 +11,9 @@ const str = (v: unknown) => (v == null ? "" : String(v));
 
 const NATIVE: Record<string, string> = { ethereum: "ETH", bsc: "BNB", polygon: "POL", arbitrum: "ETH", base: "ETH", optimism: "ETH" };
 
-// Public Blockscout instances (CORS: *). Keyless works but is tightly rate-limited per IP
-// (10 requests per ~45 min observed); a free Blockscout key lifts that. BSC has none.
+// Public Blockscout instances (CORS: *). Their Etherscan-style /api allows only 10 keyless
+// requests per ~13 min, so the blockscout provider reads the REST /api/v2 instead
+// (150-180 requests per window, see providerFetch's quota pacing). BSC has none.
 export const BLOCKSCOUT_DEFAULTS: Record<string, string> = {
   ethereum: "https://eth.blockscout.com/api",
   optimism: "https://explorer.optimism.io/api",
@@ -27,7 +28,7 @@ const ROUTESCAN = (chainId: number) => `https://api.routescan.io/v2/network/main
 const EXCHANGE_RE = /binance|okx|okex|huobi|htx|bybit|kucoin|gate\.?io|bitget|mexc|kraken|poloniex|bitfinex|coinbase|crypto\.com|bitkub|upbit|bithumb|bingx|whitebit|gemini|exchange|hot ?wallet|deposit/i;
 const DEX_RE = /uniswap|pancake|sushi|curve|balancer|1inch|0x: exchange|aerodrome|velodrome|camelot|quickswap|swap|router|dex|liquidity|pool/i;
 
-// Synthetic, provider-independent log index for token transfers: Blockscout's tokentx has no
+// Synthetic, provider-independent log index for token transfers: Etherscan-style tokentx has no
 // logIndex, and the dedup key already includes hash/symbol/from/to, so contract+value is enough.
 function tokenLogIndex(contract: string, value: string) {
   let h = 2166136261;
@@ -35,7 +36,7 @@ function tokenLogIndex(contract: string, value: string) {
   return h % 1_000_000_000;
 }
 
-type Flavor = { id: string; label: string; defaultBase: (chain: string) => string | null; chainParam: boolean };
+type Flavor = { id: string; label: string; defaultBase: (chain: string) => string | null; chainParam: boolean; gapMs: number };
 
 function makeProvider(f: Flavor): ChainProvider {
   const base = (cfg: ProviderConfig) => {
@@ -49,7 +50,7 @@ function makeProvider(f: Flavor): ChainProvider {
     if (f.chainParam && chainId) q.set("chainid", String(chainId));
     if (cfg.apiKey) q.set("apikey", cfg.apiKey);
     const b = base(cfg);
-    const d = await providerFetch(cfg, `${b}${b.includes("?") ? "&" : "?"}${q}`, {}, f.label);
+    const d = await providerFetch(cfg, `${b}${b.includes("?") ? "&" : "?"}${q}`, {}, f.label, f.gapMs);
     if (d && str(d.status) === "0" && !Array.isArray(d.result)) {
       const msg = str(typeof d.result === "string" ? d.result : d.message) || "status=0";
       if (/rate limit/i.test(msg)) throw new ProviderError("rate", { name: f.label, status: 429 }, 429, "rate");
@@ -153,6 +154,69 @@ async function blockscoutClassify(cfg: ProviderConfig, apiBase: string, address:
   return { address, name, type };
 }
 
-export const blockscout = makeProvider({ id: "blockscout", label: "Blockscout", defaultBase: (c) => BLOCKSCOUT_DEFAULTS[c] ?? null, chainParam: false });
-export const routescan = makeProvider({ id: "routescan", label: "Routescan", defaultBase: (c) => (c === "ethereum" ? ROUTESCAN(EVM_CHAIN_IDS[c]) : null), chainParam: false });
-export const etherscan = makeProvider({ id: "etherscan", label: "Etherscan", defaultBase: () => ETHERSCAN_V2, chainParam: true });
+export const routescan = makeProvider({ id: "routescan", label: "Routescan", defaultBase: (c) => (c === "ethereum" ? ROUTESCAN(EVM_CHAIN_IDS[c]) : null), chainParam: false, gapMs: 550 });
+export const etherscan = makeProvider({ id: "etherscan", label: "Etherscan", defaultBase: () => ETHERSCAN_V2, chainParam: true, gapMs: 250 });
+
+// Blockscout REST API v2: pages by its own cursor (next_page_params) and returns real log
+// indexes. Endpoint stays the instance's ".../api" URL (as saved before), v2 lives under it.
+const V2_PAGE = 50;
+export const blockscout: ChainProvider = {
+  id: "blockscout",
+  label: "Blockscout",
+  defaultEndpoint: BLOCKSCOUT_DEFAULTS.ethereum,
+  defaultEndpointFor: (chain) => BLOCKSCOUT_DEFAULTS[chain] ?? null,
+  kinds: ["native", "token"],
+  pageSize: V2_PAGE,
+
+  async fetchPage(cfg, address, kind, { cursor }): Promise<Page> {
+    const q = new URLSearchParams(cursor ?? "");
+    if (kind === "token") q.set("type", "ERC-20");
+    const path = kind === "native" ? "transactions" : "token-transfers";
+    const d = (await v2(cfg, `/addresses/${address.toLowerCase()}/${path}`, q)) as Row;
+    const rows = (Array.isArray(d.items) ? d.items : []) as Row[];
+    const hash = (v: unknown) => str((v as Row | null)?.hash).toLowerCase();
+    const items: RawTransfer[] = [];
+    for (const t of rows) {
+      const from = hash(t.from), to = hash(t.to);
+      if (!from || !to) continue; // contract creation
+      const ts = Date.parse(str(t.timestamp));
+      if (kind === "native") {
+        const raw = str(t.value);
+        if (!/^[0-9]+$/.test(raw) || /^0+$/.test(raw)) continue; // plain contract calls move no native coin
+        items.push({ hash: str(t.hash), log_index: -1, ts, from, to, token_symbol: NATIVE[cfg.chain ?? ""] ?? "ETH",
+          token_address: null, raw, decimals: 18, status: str(t.status) === "error" ? "FAILED" : "SUCCESS" });
+      } else {
+        const token = (t.token ?? {}) as Row, total = (t.total ?? {}) as Row;
+        const raw = str(total.value), contract = str(token.address_hash || token.address).toLowerCase();
+        if (!/^[0-9]+$/.test(raw)) continue;
+        items.push({ hash: str(t.transaction_hash), log_index: Number(t.log_index) || 0, ts, from, to,
+          token_symbol: str(token.symbol).trim().slice(0, 32) || contract, token_address: contract || null,
+          raw, decimals: Number(total.decimals ?? token.decimals) || 0, status: "SUCCESS" });
+      }
+    }
+    const ts = rows.map((t) => Date.parse(str(t.timestamp))).filter(Number.isFinite);
+    const next = d.next_page_params ? new URLSearchParams(Object.entries(d.next_page_params as Row).map(([k, v]) => [k, str(v)])).toString() : undefined;
+    return { items, oldest: ts.length ? Math.min(...ts) : null, exhausted: !next, next };
+  },
+
+  async latestBlock(cfg) {
+    const d = (await v2(cfg, "/blocks", new URLSearchParams({ type: "block" }))) as Row;
+    const b = ((d.items ?? []) as Row[])[0];
+    if (!b) throw new ProviderError("noBlock", {}, 400);
+    return { number: Number(b.height), ts: Date.parse(str(b.timestamp)) };
+  },
+
+  async classifyAddress(cfg, address) {
+    const b = BLOCKSCOUT_DEFAULTS[cfg.chain ?? ""];
+    if (!b) return { address, name: "", type: "PERSON" };
+    return blockscoutClassify({ apiKey: null, endpoint: null, retries: 0 }, b, address);
+  },
+};
+
+function v2(cfg: ProviderConfig, path: string, q: URLSearchParams) {
+  const b = (cfg.endpoint || BLOCKSCOUT_DEFAULTS[cfg.chain ?? ""] || "").replace(/\/+$/, "").replace(/\/api(\/v2)?$/, "");
+  if (!b) throw new ProviderError("noEndpoint", { name: "Blockscout" }, 0, "http");
+  if (cfg.apiKey) q.set("apikey", cfg.apiKey);
+  const qs = q.toString();
+  return providerFetch(cfg, `${b}/api/v2${path}${qs ? "?" + qs : ""}`, {}, "Blockscout", 100);
+}

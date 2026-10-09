@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { fmt } from "@/i18n/config";
 import { useT } from "@/i18n/client";
 import { createClient } from "@/lib/supabase/client";
-import { providerErrorText, setRetryObserver } from "@/lib/sync/providers/http";
+import { ProviderError, providerErrorText, setRetryObserver } from "@/lib/sync/providers/http";
 import { PROVIDERS, labelCounterparties, syncWallet, type SyncWallet } from "@/lib/sync/engine";
 import { toast } from "./Toaster";
 import { OtpDialog } from "./OtpDialog";
@@ -86,19 +86,26 @@ export function SyncRunner({ wallets, email }: { wallets: SyncWallet[]; email: s
             current = name(w);
             log("run", fmt(t.sync.logWallet, { name: current }));
             setStatus({ text: fmt(t.sync.busy, { name: w.label || w.address.slice(0, 8) }), tone: "busy" });
-            await syncWallet(db, w, provider, { apiKey: conn.api_key, endpoint: conn.endpoint_url, chain }, {
-              deadline,
-              onProgress: (p) => {
-                const k = `${p.wallet.id}:${p.kind}`;
-                added += p.added - (seen.get(k) ?? 0);
-                seen.set(k, p.added);
-                setStatus({ text: fmt(t.sync.progress, { name: current, pages: p.pages, added: p.added }), tone: "busy" });
-                // Show new data while a long backfill runs (each kind done, or every 10 pages).
-                if (p.done || p.pages % 10 === 0) router.refresh();
-                if (p.done) log("ok", fmt(t.sync.logDone, { name: current, kind: kindName(p.kind) }));
-                else log("run", fmt(t.sync.logPage, { name: current, kind: kindName(p.kind), pages: p.pages, added: p.added }));
-              },
-            });
+            try {
+              await syncWallet(db, w, provider, { apiKey: conn.api_key, endpoint: conn.endpoint_url, chain }, {
+                deadline,
+                onProgress: (p) => {
+                  const k = `${p.wallet.id}:${p.kind}`;
+                  added += p.added - (seen.get(k) ?? 0);
+                  seen.set(k, p.added);
+                  setStatus({ text: fmt(t.sync.progress, { name: current, pages: p.pages, added: p.added }), tone: "busy" });
+                  // Show new data while a long backfill runs (each kind done, or every 10 pages).
+                  if (p.done || p.pages % 10 === 0) router.refresh();
+                  if (p.done) log("ok", fmt(t.sync.logDone, { name: current, kind: kindName(p.kind) }));
+                  else log("run", fmt(t.sync.logPage, { name: current, kind: kindName(p.kind), pages: p.pages, added: p.added }));
+                },
+              });
+            } catch (e) {
+              // Provider quota used up (it resets on its own): pause this wallet, keep syncing the rest.
+              if (!(e instanceof ProviderError && e.kind === "rate")) throw e;
+              log("wait", fmt(t.sync.logRateWait, { name: current }));
+              continue;
+            }
             const cfg = { apiKey: conn.api_key, endpoint: conn.endpoint_url, chain };
             try {
               const r = await labelCounterparties(db, w, provider, cfg, { deadline });

@@ -20,8 +20,8 @@ const supported = (t: Dict): Record<string, ProviderOption[]> => ({
   ],
   ...evmOptions(t),
 });
-// EVM: Routescan is keyless on Ethereum; Blockscout is keyless elsewhere (tight per-IP limit);
-// Etherscan V2 needs a free key and covers every chain (BSC has no keyless option).
+// EVM: Routescan is keyless on Ethereum; Blockscout (REST v2) is keyless elsewhere.
+// Etherscan V2's free key covers Ethereum, Polygon and Arbitrum only; BSC has no free option.
 function evmOptions(t: Dict): Record<string, ProviderOption[]> {
   const routescan: ProviderOption = { value: "routescan", label: t.conn.routescanLabel, keyHint: t.conn.routescanKey, endpointHint: t.conn.routescanEndpoint };
   const blockscout: ProviderOption = { value: "blockscout", label: t.conn.blockscoutLabel, keyHint: t.conn.blockscoutKey, endpointHint: t.conn.blockscoutEndpoint };

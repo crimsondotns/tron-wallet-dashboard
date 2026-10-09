@@ -35,6 +35,21 @@ export function setRetryObserver(fn: ((r: RetryInfo) => void) | null) { onRetry 
 const GAP_MS = 400; // keyless Tronscan allows 3 req/s and suspends the IP for 120 s when exceeded
 const lastCall = new Map<string, number>();
 
+// Quota pacing: hosts that report x-ratelimit-remaining / x-ratelimit-reset (Blockscout, in ms)
+// are left alone until the window resets once the quota is nearly used, so we wait instead of
+// collecting 429s. Waits longer than MAX_QUOTA_WAIT_MS end the run; the next run resumes.
+const MAX_QUOTA_WAIT_MS = 90_000;
+const readyAt = new Map<string, number>();
+function quotaResetMs(h: Headers): number | null {
+  const reset = Number(h.get("x-ratelimit-reset"));
+  return h.has("x-ratelimit-reset") && reset > 0 && reset <= 3_600_000 ? reset : null; // ignore epoch-style values
+}
+function noteQuota(host: string, h: Headers) {
+  const remaining = Number(h.get("x-ratelimit-remaining"));
+  const reset = quotaResetMs(h);
+  if (h.has("x-ratelimit-remaining") && remaining <= 1 && reset !== null) readyAt.set(host, Date.now() + reset + 250);
+}
+
 // fetch() rejects with a bare TypeError for both CORS blocks and unreachable hosts.
 // A no-cors probe tells them apart: it resolves (opaque) if the server answered at all.
 async function classifyNetworkError(url: string): Promise<ProviderError> {
@@ -53,7 +68,9 @@ export async function providerFetch(cfg: ProviderConfig, url: string, init: Requ
   const retries = cfg.retries ?? 4;
   let last: ProviderError | null = null;
   for (let i = 0; i <= retries; i++) {
-    const wait = (lastCall.get(host) ?? 0) + gapMs - Date.now();
+    const quotaWait = (readyAt.get(host) ?? 0) - Date.now();
+    if (quotaWait > MAX_QUOTA_WAIT_MS) throw new ProviderError("rate", { name, status: 429 }, 429, "rate");
+    const wait = Math.max(quotaWait, (lastCall.get(host) ?? 0) + gapMs - Date.now());
     if (wait > 0) await sleep(wait);
     lastCall.set(host, Date.now());
     let res: Response;
@@ -65,6 +82,7 @@ export async function providerFetch(cfg: ProviderConfig, url: string, init: Requ
       if (i < retries) { onRetry?.({ name, status: 0, waitMs: 1500 * 2 ** i, attempt: i + 1, of: retries }); await sleep(1500 * 2 ** i); }
       continue;
     }
+    noteQuota(host, res.headers);
     if (res.ok) {
       try {
         return await res.json();
@@ -77,7 +95,9 @@ export async function providerFetch(cfg: ProviderConfig, url: string, init: Requ
       last = new ProviderError(res.status === 429 ? "rate" : "server", { name, status: res.status },
         res.status, res.status === 429 ? "rate" : "server");
       const ra = Number(res.headers.get("retry-after"));
-      const waitMs = ra > 0 ? ra * 1000 : Math.min(1500 * 2 ** i, 20000);
+      const reset = res.status === 429 ? quotaResetMs(res.headers) : null;
+      const waitMs = reset !== null ? reset + 250 : ra > 0 ? ra * 1000 : Math.min(1500 * 2 ** i, 20000);
+      if (waitMs > MAX_QUOTA_WAIT_MS) throw last;
       if (i < retries) { onRetry?.({ name, status: res.status, waitMs, attempt: i + 1, of: retries }); await sleep(waitMs); }
       continue;
     }
