@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LOCALE_TAGS } from "@/i18n/config";
 import { useLocale, useT } from "@/i18n/client";
 import { clearLog, CONSOLE_OPEN_EVENT, getLog, getServerLog, reportError, subscribeLog, type LogLine, type LogTag } from "@/lib/sync/log";
+import { toast } from "./Toaster";
 import { useContainScroll } from "./useContainScroll";
 
 const TAG: Record<LogTag, { label: string; cls: string }> = {
@@ -51,6 +52,12 @@ export function ConsoleCard() {
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
   }, [lines, open]);
 
+  const copy = async () => {
+    const text = lines.map((l) => `${time(l.ts)} ${TAG[l.tag].label} ${source(l)}${l.text}${l.detail ? `\n${l.detail}` : ""}`).join("\n");
+    await navigator.clipboard.writeText(text);
+    toast(t.common.copied);
+  };
+
   if (!lines.length) return null;
   const unseenError = !open && lines.some((l) => l.tag === "fail" && l.id > seen);
   const icon = (
@@ -72,6 +79,7 @@ export function ConsoleCard() {
       <header className="console-card-head">
         <span className="console-card-title">{icon}{t.console.title}</span>
         <span className="console-card-actions">
+          <button type="button" className="btn-ghost btn-sm" onClick={copy}>{t.common.copy}</button>
           <button type="button" className="btn-ghost btn-sm" onClick={clearLog}>{t.sync.logClear}</button>
           <button type="button" className="icon-btn" onClick={close} aria-label={t.console.hide}>
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
