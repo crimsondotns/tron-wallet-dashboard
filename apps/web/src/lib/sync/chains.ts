@@ -2,6 +2,12 @@
 // Chains without a provider stay hidden from pickers and are rejected by server actions.
 export const CHAIN_PROVIDERS: Record<string, readonly string[]> = {
   tron: ["tronscan", "trongrid"],
+  ethereum: ["routescan", "blockscout", "etherscan"],
+  optimism: ["blockscout", "etherscan"],
+  base: ["blockscout", "etherscan"],
+  arbitrum: ["blockscout", "etherscan"],
+  polygon: ["blockscout", "etherscan"],
+  bsc: ["etherscan"],
 };
 
 export const isSupportedChain = (chain: string) => Object.hasOwn(CHAIN_PROVIDERS, chain);

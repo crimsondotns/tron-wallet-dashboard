@@ -1,13 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tronscan } from "./providers/tronscan";
 import { trongrid } from "./providers/trongrid";
+import { blockscout, etherscan, routescan } from "./providers/etherscanLike";
 import { ProviderError } from "./providers/http";
 import type { ChainProvider, ProviderConfig, PublicLabel, RawTransfer, SyncKind } from "./types";
 
 // Browser sync, same strategy as scripts/sync.mjs: first pull anything newer than what we
 // have, then keep paging backwards until the first transaction. Each page goes to
 // ingest_transfers; the lease keeps other open browsers off this wallet meanwhile.
-export const PROVIDERS: Record<string, ChainProvider> = { tronscan, trongrid };
+export const PROVIDERS: Record<string, ChainProvider> = { tronscan, trongrid, routescan, blockscout, etherscan };
 
 export type SyncWallet = { id: string; chain_id: string; address: string; label: string };
 export type Progress = { wallet: SyncWallet; kind: SyncKind; pages: number; added: number; done: boolean };

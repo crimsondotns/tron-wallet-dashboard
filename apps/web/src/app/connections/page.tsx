@@ -15,8 +15,25 @@ const supported = (t: Dict): Record<string, ProviderOption[]> => ({
     { value: "tronscan", label: "Tronscan", keyHint: t.conn.tronscanKey, endpointHint: t.conn.tronscanEndpoint },
     { value: "trongrid", label: t.conn.trongridLabel, keyHint: t.conn.trongridKey, endpointHint: t.conn.trongridEndpoint },
   ],
+  ...evmOptions(t),
 });
-const SAMPLE_ADDRESS: Record<string, string> = { tron: "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G" };
+// EVM: Routescan is keyless on Ethereum; Blockscout is keyless elsewhere (tight per-IP limit);
+// Etherscan V2 needs a free key and covers every chain (BSC has no keyless option).
+function evmOptions(t: Dict): Record<string, ProviderOption[]> {
+  const routescan: ProviderOption = { value: "routescan", label: t.conn.routescanLabel, keyHint: t.conn.routescanKey, endpointHint: t.conn.routescanEndpoint };
+  const blockscout: ProviderOption = { value: "blockscout", label: t.conn.blockscoutLabel, keyHint: t.conn.blockscoutKey, endpointHint: t.conn.blockscoutEndpoint };
+  const etherscan: ProviderOption = { value: "etherscan", label: "Etherscan", keyHint: t.conn.etherscanKey, endpointHint: t.conn.etherscanEndpoint };
+  return {
+    ethereum: [routescan, blockscout, etherscan],
+    optimism: [blockscout, etherscan], base: [blockscout, etherscan], arbitrum: [blockscout, etherscan], polygon: [blockscout, etherscan],
+    bsc: [etherscan],
+  };
+}
+const EVM_SAMPLE = "0x28c6c06298d514db089934071355e5743bf21d60"; // Binance hot wallet, busy on every EVM chain
+const SAMPLE_ADDRESS: Record<string, string> = {
+  tron: "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G",
+  ethereum: EVM_SAMPLE, bsc: EVM_SAMPLE, polygon: EVM_SAMPLE, arbitrum: EVM_SAMPLE, base: EVM_SAMPLE, optimism: EVM_SAMPLE,
+};
 
 export default async function Connections({ searchParams }: { searchParams: Promise<{ chain?: string; error?: string; saved?: string; deleted?: string }> }) {
   const { chain: picked, error, saved, deleted } = await searchParams;

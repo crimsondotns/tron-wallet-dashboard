@@ -49,14 +49,14 @@ export function ConnectionDetail({ chain, email, options, saved, wallets, sample
         if (error) { toast(error.code === "42501" ? t.key.adminOnly : t.common.errGeneric); return; }
         key = data?.[0]?.api_key ?? null;
       }
-      await diagnose(p, { apiKey: key, endpoint: endpoint.trim() || null }, address.trim(), setReport, { t, locale, tz });
+      await diagnose(p, { apiKey: key, endpoint: endpoint.trim() || null, chain }, address.trim(), setReport, { t, locale, tz });
     } finally {
       setRunning(false);
     }
   };
   const copy = async () => {
     if (!report) return;
-    await navigator.clipboard.writeText(reportText(report, { provider: p.label, endpoint: endpoint || p.defaultEndpoint, address, hasKey: !!apiKey || useSavedKey }, t, locale));
+    await navigator.clipboard.writeText(reportText(report, { provider: p.label, endpoint: endpoint || p.defaultEndpointFor?.(chain) || p.defaultEndpoint, address, hasKey: !!apiKey || useSavedKey }, t, locale));
     toast(t.common.copied);
   };
 
