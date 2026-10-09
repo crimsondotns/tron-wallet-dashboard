@@ -40,14 +40,39 @@ function url(cfg: ProviderConfig) {
 
 const GAP_MS = 50; // PublicNode served 10 parallel getTransaction calls (~40/s) without a 429
 const PARALLEL = 4;
-const post = (cfg: ProviderConfig, body: unknown) => providerFetch(cfg, url(cfg), {
-  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-}, "Solana RPC", GAP_MS);
+const BATCH_MAX = 10; // calls per JSON-RPC batch; plans count each item (Helius free: 10 req/s)
+const RATE_TRIES = 3; // own retries on a rate limit, also when cfg.retries = 0 (diagnostics)
 
-async function rpc<T>(cfg: ProviderConfig, method: string, params: unknown[]): Promise<T> {
-  const d = await post(cfg, { jsonrpc: "2.0", id: 1, method, params });
-  if (d?.error) throw rpcError(d.error);
-  return d.result as T;
+// Per-endpoint spacing per call: starts at GAP_MS and slows down after each rate limit, so a
+// burst (batch of signature lists, then a page of getTransaction) settles under the plan's quota.
+const gaps = new Map<string, number>();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// `weight` = calls in the body, so a batch waits as long as its calls would one by one.
+// `check` turns a JSON-RPC level error (HTTP 200 with error -32429 etc.) into a throw.
+async function post<T>(cfg: ProviderConfig, body: unknown, weight: number, check: (d: unknown) => T): Promise<T> {
+  const target = url(cfg);
+  for (let i = 0; ; i++) {
+    const gap = gaps.get(target) ?? GAP_MS;
+    try {
+      const d = await providerFetch(cfg, target, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      }, "Solana RPC", gap * weight);
+      return check(d);
+    } catch (e) {
+      if (!(e instanceof ProviderError && e.kind === "rate") || i >= RATE_TRIES - 1) throw e;
+      gaps.set(target, Math.min(Math.max(gap * 2, 150), 600));
+      await sleep(1000 * (i + 1));
+    }
+  }
+}
+
+function rpc<T>(cfg: ProviderConfig, method: string, params: unknown[]): Promise<T> {
+  return post(cfg, { jsonrpc: "2.0", id: 1, method, params }, 1, (d) => {
+    const r = d as Row | null;
+    if (r?.error) throw rpcError(r.error);
+    return r?.result as T;
+  });
 }
 
 function rpcError(e: unknown): ProviderError {
@@ -74,27 +99,34 @@ async function many<T>(cfg: ProviderConfig, calls: { method: string; params: unk
 
 const noBatch = new Set<string>(); // endpoints that rejected a JSON-RPC batch
 
-// Cheap calls (signature lists, token accounts) in one HTTP request; falls back to `many`.
+// Cheap calls (signature lists, token accounts) in batches of BATCH_MAX; falls back to `many`.
 async function batch<T>(cfg: ProviderConfig, calls: { method: string; params: unknown[] }[]): Promise<T[]> {
+  const out: T[] = [];
+  for (let at = 0; at < calls.length; at += BATCH_MAX) out.push(...await batchChunk<T>(cfg, calls.slice(at, at + BATCH_MAX)));
+  return out;
+}
+
+async function batchChunk<T>(cfg: ProviderConfig, calls: { method: string; params: unknown[] }[]): Promise<T[]> {
   if (!calls.length) return [];
   const target = url(cfg);
   if (calls.length > 1 && !noBatch.has(target)) {
-    let d: unknown;
+    let res: T[] | null;
     try {
-      d = await post(cfg, calls.map((c, id) => ({ jsonrpc: "2.0", id, ...c })));
-    } catch (e) {
-      if (!(e instanceof ProviderError && e.status === 400)) throw e;
-      d = null; // HTTP 400: batch not allowed here
-    }
-    if (Array.isArray(d)) {
-      const byId = new Map<number, Row>(d.map((x: Row) => [Number(x.id), x]));
-      return calls.map((_, i) => {
-        const r = byId.get(i);
-        if (!r) throw new ProviderError("rpcFailed", { name: "Solana RPC", msg: "missing batch item" }, 400);
-        if (r.error) throw rpcError(r.error);
-        return r.result as T;
+      res = await post(cfg, calls.map((c, id) => ({ jsonrpc: "2.0", id, ...c })), calls.length, (d) => {
+        if (!Array.isArray(d)) return null;
+        const byId = new Map<number, Row>(d.map((x: Row) => [Number(x.id), x]));
+        return calls.map((_, i) => {
+          const r = byId.get(i);
+          if (!r) throw new ProviderError("rpcFailed", { name: "Solana RPC", msg: "missing batch item" }, 400);
+          if (r.error) throw rpcError(r.error);
+          return r.result as T;
+        });
       });
+    } catch (e) {
+      if (!(e instanceof ProviderError && e.status === 400 && e.code === "http")) throw e;
+      res = null; // HTTP 400: batch not allowed here
     }
+    if (res) return res;
     noBatch.add(target);
   }
   return many<T>(cfg, calls);
