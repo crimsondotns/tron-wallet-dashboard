@@ -69,7 +69,7 @@ export const zh = {
     errChain: "暂不支持该网络。",
     count: "{wallets} 个钱包 · {chains} 条链",
     noOrg: "未找到此账户的工作区。请尝试退出后重新登录。",
-    addressPh: "地址（T… 或 0x…）",
+    addressPh: "地址（T…、0x… 或 Solana）",
     labelPh: "备注名，例如 主金库",
     label: "备注名",
     add: "添加",
@@ -164,6 +164,9 @@ export const zh = {
     blockscoutEndpoint: "此链的 Blockscout 默认地址，或 Etherscan 风格的 API URL",
     etherscanKey: "来自 etherscan.io 的 API key（一个 key 适用所有 EVM 链）",
     etherscanEndpoint: "默认 https://api.etherscan.io/v2/api",
+    solanaLabel: "Solana RPC（免费默认或自有节点）",
+    solanaKey: "API 密钥（可选，以 Helius 的 ?api-key= 发送）或直接写在 URL 中",
+    solanaEndpoint: "默认 https://solana-rpc.publicnode.com（免费）或 Helius / QuickNode / Alchemy 的 URL",
   },
   key: {
     adminOnly: "只有工作区管理员可以查看 key。",
@@ -400,7 +403,7 @@ export const zh = {
     http: "{name} 返回 HTTP {status}",
     noResponse: "{name} 无响应",
     rpcFailed: "{name} 返回失败：{msg}",
-    noBlock: "此 endpoint 不返回 TRON 区块数据",
+    noBlock: "此 endpoint 不返回该链的区块数据",
     noEndpoint: "{name} 在此链没有免费默认地址，请填写 endpoint URL",
   },
 } satisfies Dict;

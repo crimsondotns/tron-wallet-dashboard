@@ -15,6 +15,9 @@ const supported = (t: Dict): Record<string, ProviderOption[]> => ({
     { value: "tronscan", label: "Tronscan", keyHint: t.conn.tronscanKey, endpointHint: t.conn.tronscanEndpoint },
     { value: "trongrid", label: t.conn.trongridLabel, keyHint: t.conn.trongridKey, endpointHint: t.conn.trongridEndpoint },
   ],
+  solana: [
+    { value: "solana_rpc", label: t.conn.solanaLabel, keyHint: t.conn.solanaKey, endpointHint: t.conn.solanaEndpoint },
+  ],
   ...evmOptions(t),
 });
 // EVM: Routescan is keyless on Ethereum; Blockscout is keyless elsewhere (tight per-IP limit);
@@ -32,6 +35,7 @@ function evmOptions(t: Dict): Record<string, ProviderOption[]> {
 const EVM_SAMPLE = "0x28c6c06298d514db089934071355e5743bf21d60"; // Binance hot wallet, busy on every EVM chain
 const SAMPLE_ADDRESS: Record<string, string> = {
   tron: "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G",
+  solana: "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
   ethereum: EVM_SAMPLE, bsc: EVM_SAMPLE, polygon: EVM_SAMPLE, arbitrum: EVM_SAMPLE, base: EVM_SAMPLE, optimism: EVM_SAMPLE,
 };
 

@@ -47,13 +47,13 @@ async function classifyNetworkError(url: string): Promise<ProviderError> {
 }
 
 // Shared JSON fetch for providers: per-host spacing, retry with backoff on network/429/5xx,
-// and errors classified so the UI can explain them.
-export async function providerFetch(cfg: ProviderConfig, url: string, init: RequestInit, name: string) {
+// and errors classified so the UI can explain them. `gapMs` = minimum spacing per host.
+export async function providerFetch(cfg: ProviderConfig, url: string, init: RequestInit, name: string, gapMs = GAP_MS) {
   const host = new URL(url).host;
   const retries = cfg.retries ?? 4;
   let last: ProviderError | null = null;
   for (let i = 0; i <= retries; i++) {
-    const wait = (lastCall.get(host) ?? 0) + GAP_MS - Date.now();
+    const wait = (lastCall.get(host) ?? 0) + gapMs - Date.now();
     if (wait > 0) await sleep(wait);
     lastCall.set(host, Date.now());
     let res: Response;

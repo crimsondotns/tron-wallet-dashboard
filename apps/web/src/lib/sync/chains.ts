@@ -8,6 +8,7 @@ export const CHAIN_PROVIDERS: Record<string, readonly string[]> = {
   arbitrum: ["blockscout", "etherscan"],
   polygon: ["blockscout", "etherscan"],
   bsc: ["etherscan"],
+  solana: ["solana_rpc"],
 };
 
 export const isSupportedChain = (chain: string) => Object.hasOwn(CHAIN_PROVIDERS, chain);

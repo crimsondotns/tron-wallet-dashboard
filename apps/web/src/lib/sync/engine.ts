@@ -2,17 +2,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { tronscan } from "./providers/tronscan";
 import { trongrid } from "./providers/trongrid";
 import { blockscout, etherscan, routescan } from "./providers/etherscanLike";
+import { solanaRpc } from "./providers/solana";
 import { ProviderError } from "./providers/http";
 import type { ChainProvider, ProviderConfig, PublicLabel, RawTransfer, SyncKind } from "./types";
 
 // Browser sync, same strategy as scripts/sync.mjs: first pull anything newer than what we
 // have, then keep paging backwards until the first transaction. Each page goes to
 // ingest_transfers; the lease keeps other open browsers off this wallet meanwhile.
-export const PROVIDERS: Record<string, ChainProvider> = { tronscan, trongrid, routescan, blockscout, etherscan };
+export const PROVIDERS: Record<string, ChainProvider> = { tronscan, trongrid, routescan, blockscout, etherscan, solana_rpc: solanaRpc };
 
 export type SyncWallet = { id: string; chain_id: string; address: string; label: string };
 export type Progress = { wallet: SyncWallet; kind: SyncKind; pages: number; added: number; done: boolean };
-type Cursor = { before: number | null; offset: number };
+type Cursor = { before: number | null; offset: number; cursor?: string };
 
 export async function syncWallet(
   db: SupabaseClient,
@@ -44,9 +45,10 @@ export async function syncWallet(
       //    pass has reached it; if the run stops halfway, the next run re-fetches the whole gap.
       const knownUntil = cur.newest_ts ? Date.parse(cur.newest_ts) : null;
       if (knownUntil) {
-        let newest = knownUntil, reached = false;
+        let newest = knownUntil, reached = false, next: string | undefined;
         for (let offset = 0; Date.now() < deadline; offset += provider.pageSize) {
-          const page = await provider.fetchPage(cfg, wallet.address, kind, { before: null, offset });
+          const page = await provider.fetchPage(cfg, wallet.address, kind, { before: null, offset, cursor: next });
+          next = page.next;
           if (page.items.length) await push(page.items, null, false);
           for (const r of page.items) if (r.ts > newest) newest = r.ts;
           if (page.exhausted || page.oldest === null || page.oldest <= knownUntil) { reached = true; break; }
@@ -65,8 +67,13 @@ export async function syncWallet(
         const page = await provider.fetchPage(cfg, wallet.address, kind, c);
         if (page.oldest === null) { done = true; await push([], c, true); break; }
         const oldest = page.oldest;
-        c = c.before !== null && oldest >= c.before ? { before: c.before, offset: c.offset + provider.pageSize } : { before: oldest, offset: 0 };
-        done = page.exhausted && c.offset === 0;
+        if (page.next !== undefined) { // id-cursor providers: no same-timestamp offset paging
+          c = { before: oldest, offset: 0, cursor: page.next };
+          done = page.exhausted;
+        } else {
+          c = c.before !== null && oldest >= c.before ? { before: c.before, offset: c.offset + provider.pageSize } : { before: oldest, offset: 0 };
+          done = page.exhausted && c.offset === 0;
+        }
         await push(page.items, c, done);
       }
     } catch (e) {

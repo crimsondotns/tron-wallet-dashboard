@@ -22,7 +22,10 @@ export type ProviderConfig = { apiKey: string | null; endpoint: string | null; r
 // One newest-first page. `oldest` is the oldest timestamp the provider returned *before*
 // filtering (so paging keeps moving even if every item was filtered out); `exhausted` means
 // there is nothing older.
-export type Page = { items: RawTransfer[]; oldest: number | null; exhausted: boolean };
+// `next` (optional): an opaque provider cursor for chains that page by id rather than by
+// time (Solana signatures). When a provider returns it, the engine passes it back as
+// `opts.cursor` and ignores `offset`.
+export type Page = { items: RawTransfer[]; oldest: number | null; exhausted: boolean; next?: string };
 
 export type LabelType = "PERSON" | "EXCHANGE" | "DEX" | "CONTRACT";
 export type PublicLabel = { address: string; name: string; type: LabelType };
@@ -36,7 +39,7 @@ export interface ChainProvider {
   kinds: SyncKind[];
   pageSize: number;
   // `before` = only items at or before this ms timestamp; `offset` pages within that timestamp.
-  fetchPage(cfg: ProviderConfig, address: string, kind: SyncKind, opts: { before: number | null; offset: number }): Promise<Page>;
+  fetchPage(cfg: ProviderConfig, address: string, kind: SyncKind, opts: { before: number | null; offset: number; cursor?: string }): Promise<Page>;
   latestBlock(cfg: ProviderConfig): Promise<{ number: number; ts: number }>;
   // Public name/tag of an address from the explorer (exchange hot wallets, DEX routers, contracts).
   classifyAddress?(cfg: ProviderConfig, address: string): Promise<PublicLabel>;

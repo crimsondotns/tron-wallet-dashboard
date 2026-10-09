@@ -69,7 +69,7 @@ export const en = {
     errChain: "This network isn't supported yet.",
     count: "{wallets} wallets · {chains} chains",
     noOrg: "No workspace found for this account. Try signing out and back in.",
-    addressPh: "Address (T… or 0x…)",
+    addressPh: "Address (T…, 0x… or Solana)",
     labelPh: "Label, e.g. Main treasury",
     label: "Label",
     add: "Add",
@@ -164,6 +164,9 @@ export const en = {
     blockscoutEndpoint: "Blockscout default for this chain, or an Etherscan-style API URL",
     etherscanKey: "API key from etherscan.io (one key for all EVM chains)",
     etherscanEndpoint: "Default https://api.etherscan.io/v2/api",
+    solanaLabel: "Solana RPC (free default or your own)",
+    solanaKey: "Optional API key (sent as ?api-key=, Helius style) or put it in the URL",
+    solanaEndpoint: "Default https://solana-rpc.publicnode.com (free) or a Helius / QuickNode / Alchemy URL",
   },
   key: {
     adminOnly: "Only workspace admins can view the key.",
@@ -400,7 +403,7 @@ export const en = {
     http: "{name} returned HTTP {status}",
     noResponse: "{name} didn't respond",
     rpcFailed: "{name} reported a failure: {msg}",
-    noBlock: "This endpoint doesn't return TRON block data",
+    noBlock: "This endpoint doesn't return block data for this chain",
     noEndpoint: "{name} has no free default for this chain; enter an endpoint URL",
   },
 } satisfies Dict;

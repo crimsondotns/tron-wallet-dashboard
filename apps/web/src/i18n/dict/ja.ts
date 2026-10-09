@@ -69,7 +69,7 @@ export const ja = {
     errChain: "このネットワークにはまだ対応していません。",
     count: "{wallets} ウォレット · {chains} チェーン",
     noOrg: "このアカウントのワークスペースが見つかりません。一度ログアウトして再ログインしてください。",
-    addressPh: "アドレス（T… または 0x…）",
+    addressPh: "アドレス（T…、0x… または Solana）",
     labelPh: "ラベル（例：メイン金庫）",
     label: "ラベル",
     add: "追加",
@@ -164,6 +164,9 @@ export const ja = {
     blockscoutEndpoint: "このチェーンの Blockscout 既定値、または Etherscan 形式の API URL",
     etherscanKey: "etherscan.io の API key（全 EVM チェーン共通）",
     etherscanEndpoint: "既定値 https://api.etherscan.io/v2/api",
+    solanaLabel: "Solana RPC（無料のデフォルトまたは独自）",
+    solanaKey: "API キー（任意。Helius 形式の ?api-key= で送信）または URL に含める",
+    solanaEndpoint: "デフォルト https://solana-rpc.publicnode.com（無料）または Helius / QuickNode / Alchemy の URL",
   },
   key: {
     adminOnly: "key を表示できるのはワークスペース管理者のみです。",
@@ -400,7 +403,7 @@ export const ja = {
     http: "{name} が HTTP {status} を返しました",
     noResponse: "{name} から応答がありません",
     rpcFailed: "{name} が失敗を返しました：{msg}",
-    noBlock: "この endpoint は TRON のブロックデータを返しません",
+    noBlock: "この endpoint はこのチェーンのブロックデータを返しません",
     noEndpoint: "{name} にはこのチェーンの無料既定値がありません。endpoint URL を入力してください",
   },
 } satisfies Dict;

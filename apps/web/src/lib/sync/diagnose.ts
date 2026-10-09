@@ -119,9 +119,11 @@ export async function diagnose(
   });
 
   let oldestNative: number | null = null;
+  let nextNative: string | undefined;
   await run("native", async () => {
     const p = await provider.fetchPage(fast, address, "native", { before: null, offset: 0 });
     oldestNative = p.oldest;
+    nextNative = p.next;
     r.sample.push(...p.items);
     if (!p.items.length && p.oldest === null) return { status: "warn", detail: d.nativeNone, fix: d.nativeNoneFix };
     return { detail: fmt(d.got, { n: p.items.length }) + (p.items.length ? fmt(d.latest, { date: date(Math.max(...p.items.map((i) => i.ts))) }) : "") };
@@ -138,7 +140,7 @@ export async function diagnose(
 
   await run("paging", async () => {
     if (oldestNative === null) return { status: "skip", detail: d.pagingSkip };
-    const p = await provider.fetchPage(fast, address, "native", { before: oldestNative, offset: 0 });
+    const p = await provider.fetchPage(fast, address, "native", { before: oldestNative, offset: 0, cursor: nextNative });
     if (p.oldest !== null && p.oldest > oldestNative) throw new Error(d.pagingWrong);
     return { detail: p.oldest === null ? d.pagingFirst : fmt(d.pagingBack, { date: date(p.oldest) }) };
   });

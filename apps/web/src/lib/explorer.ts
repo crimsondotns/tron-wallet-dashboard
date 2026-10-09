@@ -6,6 +6,7 @@ const EXPLORERS: Record<string, { name: string; base: string; address: string; t
   polygon: { name: "PolygonScan", base: "https://polygonscan.com", address: "/address/", tx: "/tx/" },
   arbitrum: { name: "Arbiscan", base: "https://arbiscan.io", address: "/address/", tx: "/tx/" },
   base: { name: "BaseScan", base: "https://basescan.org", address: "/address/", tx: "/tx/" },
+  solana: { name: "Solscan", base: "https://solscan.io", address: "/account/", tx: "/tx/" },
   optimism: { name: "Optimistic Etherscan", base: "https://optimistic.etherscan.io", address: "/address/", tx: "/tx/" },
 };
 
