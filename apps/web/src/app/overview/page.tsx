@@ -28,6 +28,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { PageLoader } from "@/components/PageLoader";
 import { isAdminRole, roleIn } from "@/lib/org";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/sync/log";
 
 type Summary = {
   token: string | null; tokens: string[]; last_day: string | null;
@@ -146,7 +147,7 @@ async function build(sp: Params, { t, locale, tz, email }: { t: Dict; locale: Lo
     : { data: [], error: null };
   // Any failed query shows an error state instead of a misleading "no data" state.
   const loadErr = walletsErr ?? summaryErr ?? graphErr ?? graphLabelsErr ?? txErr ?? labelsErr ?? namedErr;
-  if (loadErr) console.error("[overview] query failed:", loadErr.code, loadErr.message);
+  if (loadErr) reportError("overview: query failed", loadErr);
   const cpNamed = [
     ...wallets.filter((w) => w.label && !selected.some((x) => x.id === w.id)).map((w) => ({ address: w.address, name: w.label })),
     ...(namedRows ?? []).filter((l) => !wallets.some((w) => w.address === l.address)),

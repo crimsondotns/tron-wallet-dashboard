@@ -5,11 +5,11 @@ import { go, refreshData } from "@/lib/nav";
 import { normalizeAddress } from "@/lib/sync/address";
 import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/sync/log";
 
 // Navigate with an error code only; the page translates it. Never pass database messages through.
 const fail = (code: string) => go(`/?error=${encodeURIComponent(code)}`);
-const logError = (where: string, error: { code?: string; message: string }) =>
-  console.error(`[wallets] ${where} failed:`, error.code, error.message);
+const logError = (where: string, error: { code?: string; message: string }) => reportError(`wallets: ${where} failed`, error);
 
 export async function addWallet(form: FormData) {
   const chain = String(form.get("chain_id") ?? "");

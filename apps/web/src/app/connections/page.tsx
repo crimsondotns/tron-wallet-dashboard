@@ -14,6 +14,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { PageLoader } from "@/components/PageLoader";
 import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/sync/log";
 
 // Providers the browser sync supports today, per chain.
 const supported = (t: Dict): Record<string, ProviderOption[]> => ({
@@ -68,7 +69,7 @@ async function build({ chain: picked, error, saved, deleted }: Params, t: Dict, 
     supabase.from("provider_connections").select("chain_id, provider, endpoint_url, api_key_secret_id"),
   ]);
   const loadErr = chainsErr ?? connsErr;
-  if (loadErr) console.error("[connections] load failed:", loadErr.code, loadErr.message);
+  if (loadErr) reportError("connections: load failed", loadErr);
   // Only chains with a sync provider are offered; the rest stay hidden until supported.
   const list = (chains ?? []).filter((c) => isSupportedChain(c.id) && SUPPORTED[c.id]).map((c) => {
     const conn = conns?.find((x) => x.chain_id === c.id);

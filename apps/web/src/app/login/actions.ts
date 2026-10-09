@@ -5,6 +5,7 @@ import { isTimeZone, TZ_COOKIE } from "@/i18n/tz";
 import { asset } from "@/lib/base";
 import { go } from "@/lib/nav";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/sync/log";
 
 function creds(form: FormData) {
   return { email: String(form.get("email") ?? ""), password: String(form.get("password") ?? "") };
@@ -16,7 +17,7 @@ export async function signIn(form: FormData) {
   if (error) {
     if (error.code === "invalid_credentials") return go("/login/?error=invalid");
     if (error.code === "email_not_confirmed") return go("/login/?error=not_confirmed");
-    console.error("[auth] signIn failed:", error.code, error.message);
+    reportError("auth: sign-in failed", error);
     return go("/login/?error=generic");
   }
   // Accounts created before language tracking (or on another device) get the current UI language,
@@ -47,7 +48,7 @@ export async function isPwned(password: string) {
       return s === suffix && Number(count) > 0;
     });
   } catch (e) {
-    console.error("[auth] HIBP check skipped:", e);
+    reportError("auth: breached-password check skipped", e);
     return false;
   }
 }
@@ -64,7 +65,7 @@ export async function signUp(form: FormData) {
   });
   if (error) {
     if (error.code === "user_already_exists" || error.code === "email_exists") return go("/register/?error=exists");
-    console.error("[auth] signUp failed:", error.code, error.message);
+    reportError("auth: sign-up failed", error);
     return go("/register/?error=generic");
   }
   if (!data.session) return go("/login/?message=check-email");
@@ -81,7 +82,7 @@ export async function signOut() {
 export async function requestReset(form: FormData) {
   const email = String(form.get("email") ?? "").trim();
   const { error } = await createClient().auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}${asset("/reset/")}` });
-  if (error) console.error("[auth] resetPasswordForEmail failed:", error.code, error.message);
+  if (error) reportError("auth: reset email failed", error);
   go("/forgot/?message=sent");
 }
 
@@ -95,7 +96,7 @@ export async function setNewPassword(form: FormData) {
   if (error) {
     if (error.code === "same_password") return go("/reset/?error=same");
     if (error.code === "weak_password") return go("/reset/?error=weak");
-    console.error("[auth] updateUser(password) failed:", error.code, error.message);
+    reportError("auth: password update failed", error);
     return go("/reset/?error=link");
   }
   go("/?message=password");

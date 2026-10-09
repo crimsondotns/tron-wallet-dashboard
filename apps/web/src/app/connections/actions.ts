@@ -4,11 +4,12 @@ import { adminOrgId } from "@/lib/org";
 import { go, refreshData } from "@/lib/nav";
 import { isSupportedChain, isSupportedProvider } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/sync/log";
 
 // Navigations carry error codes only; the page translates them. Real errors are logged here.
 const back = (chain: string) => `/connections/?chain=${encodeURIComponent(chain)}&`;
 function fail(chain: string, where: string, error: { code?: string; message: string }) {
-  console.error(`[connections] ${where} failed:`, error.code, error.message);
+  reportError(`connections: ${where} failed`, error);
   go(back(chain) + "error=generic");
 }
 

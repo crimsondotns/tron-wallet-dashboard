@@ -1,6 +1,10 @@
+"use client";
+
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
 import { useLocale, useT, useTimeZone } from "@/i18n/client";
 import type { Report, Step } from "@/lib/sync/diagnose";
+import { log, openConsole, type LogTag } from "@/lib/sync/log";
+import { useEffect, useRef } from "react";
 
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
 const fmtAmount = (raw: string, dec: number) => {
@@ -8,41 +12,10 @@ const fmtAmount = (raw: string, dec: number) => {
   return Number(`${s.slice(0, s.length - dec)}.${s.slice(s.length - dec)}`).toLocaleString("en-US", { maximumFractionDigits: 4 });
 };
 
-const TAG = {
-  label: { pass: "[ OK ]", warn: "[WARN]", fail: "[FAIL]", skip: "[SKIP]", running: "[ .. ]", pending: "" },
-  done: { ready: "c-pass", partial: "c-warn", failed: "c-fail" },
-} as const;
+const STEP_TAG: Record<string, LogTag> = { pass: "ok", warn: "wait", fail: "fail", skip: "skip" };
+const VERDICT_TAG: Record<string, LogTag> = { ready: "ok", partial: "wait", failed: "fail" };
 
-// One console line per finished/running step; consecutive skipped steps collapse into one line.
-function consoleLines(steps: Step[]) {
-  const out: React.ReactNode[] = [];
-  for (let i = 0; i < steps.length; i++) {
-    const s = steps[i];
-    if (s.status === "pending") continue;
-    if (s.status === "skip") {
-      const group = [s];
-      while (steps[i + 1]?.status === "skip") group.push(steps[++i]);
-      out.push(
-        <div key={s.id} className="console-line c-dim">
-          <span className="console-tag">[SKIP]</span> {group.map((g) => g.title).join(" · ")}
-          {group[0].detail && <div className="console-sub">{group[0].detail}</div>}
-        </div>,
-      );
-      continue;
-    }
-    out.push(
-      <div key={s.id} className="console-line">
-        <span className={`console-tag c-${s.status}`}>{TAG.label[s.status]}</span> <b>{s.title}</b>
-        {s.ms != null && <span className="c-dim"> ({s.ms.toLocaleString()} ms)</span>}
-        {s.detail && <div className={`console-sub${s.status === "fail" ? " c-fail" : ""}`}>{s.detail}</div>}
-        {s.fix && <div className="console-sub">→ {s.fix}</div>}
-      </div>,
-    );
-  }
-  return out;
-}
-
-// Verdict + metrics, the step checklist and a sample of fetched rows.
+// Verdict + metrics and a sample of fetched rows. Each step is written to the Console card as it finishes.
 export function TestResults({ report, steps, running, address, actions, command = "" }: {
   report: Report | null; steps: Step[]; running: boolean; address: string; actions?: React.ReactNode; command?: string;
 }) {
@@ -56,6 +29,28 @@ export function TestResults({ report, steps, running, address, actions, command 
     failed: { title: t.test.failedTitle, text: t.test.failedText },
   };
   const done = steps.filter((s) => !["pending", "running"].includes(s.status)).length;
+
+  const logged = useRef(new Set<string>());
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (running && !wasRunning.current) {
+      logged.current = new Set();
+      log("run", `xcap test ${command}`, "test");
+      openConsole();
+    }
+    wasRunning.current = running;
+    for (const s of steps) {
+      if (!STEP_TAG[s.status] || logged.current.has(s.id)) continue;
+      logged.current.add(s.id);
+      const detail = [s.ms != null ? `${s.ms.toLocaleString()} ms` : "", s.detail, s.fix && `→ ${s.fix}`].filter(Boolean).join(" · ");
+      log(STEP_TAG[s.status], s.title, "test", detail || undefined);
+    }
+    if (report?.verdict && !logged.current.has("#done")) {
+      logged.current.add("#done");
+      log(VERDICT_TAG[report.verdict], VERDICT[report.verdict].title, "test");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- VERDICT is derived from t
+  }, [steps, running, report, command, t]);
   return (
     <div className="stack-lg" aria-live="polite">
       {report?.verdict ? (
@@ -77,18 +72,6 @@ export function TestResults({ report, steps, running, address, actions, command 
           <div className="stack-sm">
             <h3>{running ? fmt(t.test.running, { done, total: steps.length }) : t.test.idle}</h3>
             <p className="subdued small">{running ? t.test.runningText : t.test.idleText}</p>
-          </div>
-        </div>
-      )}
-
-      {(running || report) && (
-        <div className="console" role="log" aria-label={t.test.log}>
-          <div className="console-bar">$ xcap test {command}</div>
-          <div className="console-body">
-            {consoleLines(steps)}
-            {report?.verdict
-              ? <div className="console-line"><span className={`console-tag ${TAG.done[report.verdict]}`}>[DONE]</span> <b>{VERDICT[report.verdict].title}</b></div>
-              : running && <div className="console-line"><span className="console-cursor" aria-hidden="true" /></div>}
           </div>
         </div>
       )}

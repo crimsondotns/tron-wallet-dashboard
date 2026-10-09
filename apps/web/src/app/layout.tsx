@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ConsoleCard } from "@/components/ConsoleCard";
 import { StickyHeaders } from "@/components/StickyHeaders";
 import { Toaster } from "@/components/Toaster";
 import { I18nProvider } from "@/i18n/client";
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <I18nProvider>
           <AuthProvider>{children}</AuthProvider>
+          <ConsoleCard />
         </I18nProvider>
         <Toaster />
         <StickyHeaders />

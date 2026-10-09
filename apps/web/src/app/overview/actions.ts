@@ -3,6 +3,7 @@
 import { adminOrgId } from "@/lib/org";
 import { refreshData } from "@/lib/nav";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/sync/log";
 
 const TYPES = ["PERSON", "EXCHANGE", "DEX", "CONTRACT"];
 
@@ -19,7 +20,7 @@ export async function saveLabel(form: FormData) {
     .upsert({ org_id: org, chain_id: chain, address, name, type, source: "manual", updated_at: new Date().toISOString() });
   if (error) {
     // Log the real cause; the UI only shows a generic message.
-    console.error("[overview] saveLabel failed:", error.code, error.message);
+    reportError("overview: save label failed", error);
     throw new Error("save_label_failed");
   }
   refreshData();
