@@ -62,6 +62,8 @@ export const zh = {
     errNotConfirmed: "邮箱尚未确认。请先点击邮件中的链接。",
     errMismatch: "两次输入的密码不一致。",
     errExists: "该邮箱已注册，请直接登录。",
+    errWeak: "密码至少需要 8 个字符。",
+    errPwned: "该密码曾在数据泄露中出现，请换一个密码。",
   },
   wallets: {
     errChain: "暂不支持该网络。",

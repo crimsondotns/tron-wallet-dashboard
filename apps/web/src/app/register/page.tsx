@@ -6,7 +6,7 @@ import { signUp } from "../login/actions";
 export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   const { t } = await getT();
-  const errors: Record<string, string> = { mismatch: t.auth.errMismatch, exists: t.auth.errExists };
+  const errors: Record<string, string> = { mismatch: t.auth.errMismatch, exists: t.auth.errExists, weak: t.auth.errWeak, pwned: t.auth.errPwned };
   return (
     <AuthShell mode="register">
       <div className="stack-sm">

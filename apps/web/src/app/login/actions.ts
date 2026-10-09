@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getLocale } from "@/i18n/server";
@@ -29,8 +30,33 @@ export async function signIn(form: FormData) {
   redirect("/");
 }
 
+// Supabase's leaked-password check is Pro-only, so query HIBP ourselves (k-anonymity: only the
+// first 5 hex chars of the SHA-1 leave the server). Fails open so an HIBP outage can't block sign-up.
+async function isPwned(password: string) {
+  const hash = createHash("sha1").update(password).digest("hex").toUpperCase();
+  try {
+    const res = await fetch(`https://api.pwnedpasswords.com/range/${hash.slice(0, 5)}`, {
+      headers: { "Add-Padding": "true" },
+      signal: AbortSignal.timeout(3000),
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const suffix = hash.slice(5);
+    return (await res.text()).split("\n").some((line) => {
+      const [s, count] = line.trim().split(":");
+      return s === suffix && Number(count) > 0;
+    });
+  } catch (e) {
+    console.error("[auth] HIBP check skipped:", e);
+    return false;
+  }
+}
+
 export async function signUp(form: FormData) {
-  if (form.get("password") !== form.get("confirm")) redirect("/register?error=mismatch");
+  const password = String(form.get("password") ?? "");
+  if (password !== form.get("confirm")) redirect("/register?error=mismatch");
+  if (password.length < 8) redirect("/register?error=weak");
+  if (await isPwned(password)) redirect("/register?error=pwned");
   const supabase = await createClient();
   const origin = (await headers()).get("origin") ?? "";
   const { data, error } = await supabase.auth.signUp({

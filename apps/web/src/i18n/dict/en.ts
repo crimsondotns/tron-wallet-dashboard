@@ -62,6 +62,8 @@ export const en = {
     errNotConfirmed: "Email not confirmed yet. Click the link we sent to your email first.",
     errMismatch: "The two passwords don't match.",
     errExists: "This email already has an account. Sign in instead.",
+    errWeak: "Password must be at least 8 characters.",
+    errPwned: "This password has appeared in a data breach. Choose a different one.",
   },
   wallets: {
     errChain: "This network isn't supported yet.",
