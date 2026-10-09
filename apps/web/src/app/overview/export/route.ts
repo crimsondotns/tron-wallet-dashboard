@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims.sub) return new Response("Unauthorized", { status: 401 });
 
-  const { data: walletRows } = await supabase.from("wallets").select("id, address, label, chain_id").order("created_at");
+  const { data: walletRows } = await supabase.from("wallets").select("id, org_id, address, label, chain_id").order("created_at");
   const wallets = walletRows ?? [];
   const w = wallets.find((x) => x.id === sp.get("wallet")) ?? wallets[0];
   if (!w) return new Response("No wallet", { status: 404 });
@@ -94,7 +94,7 @@ export async function GET(req: Request) {
     const need = [...new Set(addrs)].filter((a) => !names.has(a));
     for (let i = 0; i < need.length; i += 200) {
       const chunk = need.slice(i, i + 200);
-      const { data } = await supabase.from("address_labels").select("address, name, type").in("address", chunk);
+      const { data } = await supabase.from("address_labels").select("address, name, type").eq("org_id", w.org_id).in("address", chunk);
       for (const a of chunk) names.set(a, null);
       // Without labels, only public names (exchange/DEX/contract) remain; person labels are ours.
       for (const l of data ?? []) if (useNames || l.type !== "PERSON") names.set(l.address, { name: l.name, type: l.type });

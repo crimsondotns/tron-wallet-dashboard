@@ -7,6 +7,7 @@ import { SyncRunner } from "@/components/SyncRunner";
 import { WalletRowMenu } from "@/components/WalletRowMenu";
 import { fmt as tf } from "@/i18n/config";
 import { getT } from "@/i18n/server";
+import { isAdminRole, myOrgs } from "@/lib/org";
 import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/server";
 import { addWallet } from "./actions";
@@ -18,20 +19,23 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().sl
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   const { t } = await getT();
-  const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate, chain: t.wallets.errChain };
+  const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate, chain: t.wallets.errChain, not_allowed: t.wallets.errNotAllowed };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = claims?.claims.email as string | undefined;
   const since = daysAgo(30);
 
-  const [{ data: orgs }, { data: chains }, { data: wallets }, { data: cursors }, { data: flows }] = await Promise.all([
-    supabase.from("orgs").select("id").order("created_at"),
+  const [memberships, { data: chains }, { data: wallets }, { data: cursors }, { data: flows }] = await Promise.all([
+    myOrgs(supabase),
     supabase.from("chains").select("id, name, family").order("family", { ascending: false }).order("name"),
-    supabase.from("wallets").select("id, chain_id, address, label").order("created_at"),
+    supabase.from("wallets").select("id, org_id, chain_id, address, label").order("created_at"),
     supabase.from("sync_cursors").select("wallet_id, done"),
     supabase.from("daily_flows").select("wallet_id, token_symbol, amount_in, amount_out").gte("day", since),
   ]);
-  const org = orgs?.[0];
+  // Only admins/owners add wallets and sync; viewers are read-only.
+  const adminOrgs = memberships.filter((m) => isAdminRole(m.role)).map((m) => m.org_id);
+  const org = adminOrgs[0] ? { id: adminOrgs[0] } : null;
+  const syncable = (wallets ?? []).filter((w) => adminOrgs.includes(w.org_id));
   const chainName = (id: string) => chains?.find((c) => c.id === id)?.name ?? id;
 
   // 30-day totals per wallet, per token.
@@ -58,7 +62,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <h1>{t.nav.wallets}</h1>
         {!!wallets?.length && <span className="subdued small">{tf(t.wallets.count, { wallets: wallets.length, chains: chainCount })}</span>}
       </div>
-      {!!wallets?.length && <SyncRunner wallets={wallets} />}
+      {!!syncable.length && <SyncRunner wallets={syncable} email={email ?? ""} />}
 
       {error && <p className="error" role="alert">{errors[error] ?? t.common.errGeneric}</p>}
 

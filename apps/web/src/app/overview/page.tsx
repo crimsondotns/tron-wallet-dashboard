@@ -18,6 +18,7 @@ import { RANGES, type Range } from "@/components/overview/ranges";
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
 import { addDays, dayIn, dayStartIso } from "@/i18n/tz";
 import { getT, getTimeZone } from "@/i18n/server";
+import { isAdminRole, roleIn } from "@/lib/org";
 import { createClient } from "@/lib/supabase/server";
 
 type Summary = {
@@ -52,11 +53,14 @@ export default async function Overview({ searchParams }: {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = claims?.claims.email as string | undefined;
-  const { data: walletRows, error: walletsErr } = await supabase.from("wallets").select("id, address, label, chain_id").order("created_at");
+  const { data: walletRows, error: walletsErr } = await supabase.from("wallets").select("id, org_id, address, label, chain_id").order("created_at");
   const wallets = walletRows ?? [];
   // Always one wallet: the one in the URL, else the first.
   const wallet = wallets.some((w) => w.id === sp.wallet) ? sp.wallet! : wallets[0]?.id ?? "";
   const selected = wallet ? wallets.filter((w) => w.id === wallet) : wallets;
+  // Labels and role come from the selected wallet's workspace only.
+  const orgId = selected[0]?.org_id ?? "";
+  const canAdmin = !!orgId && isAdminRole(await roleIn(supabase, orgId));
 
   // Calendar days in the user's time zone, inclusive. "All time" starts far enough back to cover
   // any chain history. (The summary RPC still buckets by UTC day; raw transfers use exact instants.)
@@ -76,9 +80,8 @@ export default async function Overview({ searchParams }: {
     : { data: null, error: null };
   const graph = (graphRaw ?? []) as GraphEdge[];
   const { data: graphLabels, error: graphLabelsErr } = graph.length
-    ? await supabase.from("address_labels").select("address, name, type").in("address", [...new Set(graph.map((e) => e.address))])
+    ? await supabase.from("address_labels").select("address, name, type").eq("org_id", orgId).in("address", [...new Set(graph.map((e) => e.address))])
     : { data: [], error: null };
-  const { data: myRole, error: roleErr } = tab === "map" ? await supabase.from("org_members").select("role").eq("user_id", String(claims?.claims.sub)).limit(1).maybeSingle() : { data: null, error: null };
 
   // Transfers for the recent list (summary) or the paged table (transactions tab).
   const txLimit = tab === "tx" ? PAGE : 8;
@@ -105,14 +108,14 @@ export default async function Overview({ searchParams }: {
   // Names for every counterparty shown on this page.
   const shown = [...new Set([...(s?.top ?? []).map((c) => c.address), ...rows.map((r) => (r.dir === "IN" ? r.from_addr : r.to_addr))])];
   const { data: labelRows, error: labelsErr } = shown.length
-    ? await supabase.from("address_labels").select("address, name, type").in("address", shown)
+    ? await supabase.from("address_labels").select("address, name, type").eq("org_id", orgId).in("address", shown)
     : { data: [], error: null };
   // Choices for the counterparty filter: our wallets, then named labels.
   const { data: namedRows, error: namedErr } = tab === "tx"
-    ? await supabase.from("address_labels").select("address, name").neq("name", "").order("name").limit(500)
+    ? await supabase.from("address_labels").select("address, name").eq("org_id", orgId).neq("name", "").order("name").limit(500)
     : { data: [], error: null };
   // Any failed query shows an error state instead of a misleading "no data" state.
-  const loadErr = walletsErr ?? summaryErr ?? graphErr ?? graphLabelsErr ?? roleErr ?? txErr ?? labelsErr ?? namedErr;
+  const loadErr = walletsErr ?? summaryErr ?? graphErr ?? graphLabelsErr ?? txErr ?? labelsErr ?? namedErr;
   if (loadErr) console.error("[overview] query failed:", loadErr.code, loadErr.message);
   const cpNamed = [
     ...wallets.filter((w) => w.label && !selected.some((x) => x.id === w.id)).map((w) => ({ address: w.address, name: w.label })),
@@ -246,12 +249,12 @@ export default async function Overview({ searchParams }: {
       ) : (
         <>
           {/* Only the selected wallet: opening Overview must not start a sync of every wallet. */}
-          <SyncRunner key={wallet} wallets={selected} />
+          {canAdmin && <SyncRunner key={wallet} wallets={selected} email={email ?? ""} />}
           <div className="ov-bar">
             <OverviewFilters wallets={wallets.map((w) => ({ id: w.id, label: w.label || short(w.address) }))}
               wallet={wallet} tokens={s?.tokens ?? []} token={token} range={range} chain={selected[0]?.chain_id ?? "tron"} />
             <div className="ov-actions">
-              <SyncNowButton walletId={wallet} />
+              {canAdmin && <SyncNowButton walletId={wallet} />}
               {token && <ExportMenu wallet={wallet} rangeStart={range === "all" ? null : from} />}
             </div>
           </div>
@@ -269,7 +272,7 @@ export default async function Overview({ searchParams }: {
                   ...wallets.filter((w) => w.label).map((w) => [w.address, { name: w.label, type: "PERSON" } as Label]),
                 ])}
                 token={token}
-                canEdit={myRole?.role === "owner" || myRole?.role === "admin"}
+                canEdit={canAdmin}
               />
             </section>
           ) : tab === "tx" ? (

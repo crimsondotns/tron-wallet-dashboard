@@ -112,6 +112,7 @@ th.num { text-align: right; }
 a { text-decoration: none; }
 .link { color: var(--text-base); transition: opacity 0.2s ease; }
 .link:hover { opacity: 0.7; }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
 .notice { font-size: 14px; padding: 8px 12px; background: var(--background-card); border-left: 4px solid var(--brand-green); border-radius: var(--radius-sm); }
 
 .auth { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

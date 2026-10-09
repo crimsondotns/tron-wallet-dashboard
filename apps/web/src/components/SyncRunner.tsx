@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { providerErrorText, setRetryObserver } from "@/lib/sync/providers/http";
 import { PROVIDERS, labelCounterparties, syncWallet, type SyncWallet } from "@/lib/sync/engine";
 import { toast } from "./Toaster";
+import { OtpDialog } from "./OtpDialog";
 import { SyncLogPanel } from "./SyncLogPanel";
 import { log } from "@/lib/sync/log";
 
@@ -31,12 +32,15 @@ const setBusy = (busy: boolean) => {
 
 // Syncs this org's wallets from the browser while a page that mounts it is open: on load,
 // every few minutes, when the tab becomes visible, and on demand via requestSync().
-export function SyncRunner({ wallets }: { wallets: SyncWallet[] }) {
+// Mount only for org admins/owners: the database refuses sync calls from viewers (42501) and
+// asks for an email OTP step-up (P0401) before handing out the provider key or a lease.
+export function SyncRunner({ wallets, email }: { wallets: SyncWallet[]; email: string }) {
   const router = useRouter();
   const t = useT();
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
-  const [status, setStatus] = useState<{ text: string; tone: "idle" | "busy" | "error" | "setup" }>({ text: "", tone: "idle" });
+  const [status, setStatus] = useState<{ text: string; tone: "idle" | "busy" | "error" | "setup" | "otp" }>({ text: "", tone: "idle" });
+  const [otp, setOtp] = useState(false);
   const running = useRef(false);
   const key = wallets.map((w) => w.id).join(",");
 
@@ -63,6 +67,12 @@ export function SyncRunner({ wallets }: { wallets: SyncWallet[] }) {
       try {
         for (const chain of [...new Set(targets.map((w) => w.chain_id))]) {
           const { data, error } = await db.rpc("my_provider_key", { p_chain: chain });
+          if (error?.code === "P0401") { // step-up needed: wait for the user to verify a code
+            setStatus({ text: t.sync.otpNeeded, tone: "otp" });
+            log("skip", t.sync.otpNeeded);
+            return;
+          }
+          if (error?.code === "42501") { setStatus({ text: "", tone: "idle" }); return; } // not an admin: read-only
           if (error) throw error;
           const conn = data?.[0];
           const provider = conn && PROVIDERS[conn.provider];
@@ -133,12 +143,16 @@ export function SyncRunner({ wallets }: { wallets: SyncWallet[] }) {
   }, [key]);
 
   return (
+    <>
     <SyncLogPanel status={status.text ? (
       <span className={`sync-status sync-${status.tone}`} role="status">
         {status.tone === "busy" && <span className="bar bar-busy"><b /></span>}
         {status.text}
         {status.tone === "setup" && <> · <Link className="link" href="/connections">{t.sync.setupLink}</Link></>}
+        {status.tone === "otp" && <> · <button type="button" className="link link-btn" onClick={() => setOtp(true)}>{t.sync.otpVerify}</button></>}
       </span>
     ) : null} />
+    <OtpDialog open={otp} email={email} onClose={() => setOtp(false)} onVerified={() => { setOtp(false); requestSync(); }} />
+    </>
   );
 }

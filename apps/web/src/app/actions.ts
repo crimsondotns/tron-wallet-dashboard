@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { adminOrgId } from "@/lib/org";
 import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,8 +17,10 @@ export async function addWallet(form: FormData) {
   let address = String(form.get("address") ?? "").trim();
   if (chain !== "tron") address = address.toLowerCase();
   const supabase = await createClient();
+  const orgId = await adminOrgId(supabase, String(form.get("org_id") ?? ""));
+  if (!orgId) fail("not_allowed");
   const { error } = await supabase.from("wallets").insert({
-    org_id: String(form.get("org_id")),
+    org_id: orgId!,
     chain_id: chain,
     address,
     label: String(form.get("label") ?? "").trim(),
@@ -33,7 +36,9 @@ export async function addWallet(form: FormData) {
 
 export async function deleteWallet(form: FormData) {
   const supabase = await createClient();
-  const { error } = await supabase.from("wallets").delete().eq("id", String(form.get("id")));
+  const orgId = await adminOrgId(supabase);
+  if (!orgId) fail("not_allowed");
+  const { error } = await supabase.from("wallets").delete().eq("id", String(form.get("id"))).eq("org_id", orgId!);
   if (error) { logError("deleteWallet", error); fail("generic"); }
   revalidatePath("/");
 }
@@ -41,9 +46,11 @@ export async function deleteWallet(form: FormData) {
 // Only the label is editable: chain and address define the wallet's history.
 export async function renameWallet(form: FormData) {
   const supabase = await createClient();
+  const orgId = await adminOrgId(supabase);
+  if (!orgId) fail("not_allowed");
   const { error } = await supabase.from("wallets")
     .update({ label: String(form.get("label") ?? "").trim().slice(0, 80) })
-    .eq("id", String(form.get("id")));
+    .eq("id", String(form.get("id"))).eq("org_id", orgId!);
   if (error) { logError("renameWallet", error); fail("generic"); }
   revalidatePath("/");
 }

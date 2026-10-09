@@ -519,12 +519,22 @@ function NodeCard({ node, token, num, label, canEdit, onClose, walletIds, from }
   const ids = walletIds.join(","); // stable across parent re-renders (hover etc.)
   useEffect(() => {
     let off = false;
-    let q = createClient().from("transfers").select("ts, dir, amount, tx_hash").eq("token_symbol", token);
-    q = node.zone === "wallet"
-      ? q.eq("wallet_id", node.id)
-      : q.in("wallet_id", ids.split(",")).or(`and(dir.eq.IN,from_addr.eq.${node.address}),and(dir.eq.OUT,to_addr.eq.${node.address})`);
-    if (from) q = q.gte("ts", dayStartIso(from, tz));
-    void q.order("ts", { ascending: false }).limit(CARD_TX).then(({ data }) => { if (!off) setTxs((data ?? []) as CardTx[]); });
+    // Plain .eq filters (values are escaped by the client) instead of interpolating the address
+    // into a PostgREST .or() string: one query per direction, merged newest first.
+    const base = () => {
+      let q = createClient().from("transfers").select("ts, dir, amount, tx_hash").eq("token_symbol", token);
+      if (from) q = q.gte("ts", dayStartIso(from, tz));
+      return q;
+    };
+    const page = (q: ReturnType<typeof base>) => q.order("ts", { ascending: false }).limit(CARD_TX).then(({ data }) => (data ?? []) as CardTx[]);
+    const queries = node.zone === "wallet"
+      ? [page(base().eq("wallet_id", node.id))]
+      : [page(base().in("wallet_id", ids.split(",")).eq("dir", "IN").eq("from_addr", node.address)),
+         page(base().in("wallet_id", ids.split(",")).eq("dir", "OUT").eq("to_addr", node.address))];
+    void Promise.all(queries).then((parts) => {
+      if (off) return;
+      setTxs(parts.flat().sort((x, y) => (x.ts < y.ts ? 1 : x.ts > y.ts ? -1 : 0)).slice(0, CARD_TX));
+    });
     return () => { off = true; };
   }, [node.id, node.zone, node.address, token, from, tz, ids]);
   return (

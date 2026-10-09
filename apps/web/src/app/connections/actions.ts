@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { adminOrgId } from "@/lib/org";
 import { isSupportedChain, isSupportedProvider } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,6 +13,22 @@ function fail(chain: string, where: string, error: { code?: string; message: str
   redirect(back(chain) + "error=generic");
 }
 
+// Tronscan only serves its own hosts; TronGrid-compatible providers (QuickNode, GetBlock, ...)
+// may use any https URL. Changing the endpoint drops the saved key in the DB (connection_guard).
+const ALLOWED_HOSTS: Record<string, string[]> = {
+  tronscan: ["apilist.tronscanapi.com", "apilist.tronscan.org"],
+};
+const endpointOk = (provider: string, url: string) => {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" || u.username || u.password) return false;
+    const hosts = ALLOWED_HOSTS[provider];
+    return !hosts || hosts.includes(u.hostname);
+  } catch {
+    return false;
+  }
+};
+
 export async function saveConnection(form: FormData) {
   const chain = String(form.get("chain_id"));
   const provider = String(form.get("provider"));
@@ -19,14 +36,14 @@ export async function saveConnection(form: FormData) {
   const endpoint = String(form.get("endpoint_url") ?? "").trim() || null;
   if (!isSupportedChain(chain) || !isSupportedProvider(chain, provider)) redirect("/connections?error=chain");
   const supabase = await createClient();
-  const { data: orgs, error: orgErr } = await supabase.from("orgs").select("id").order("created_at").limit(1);
-  if (orgErr) fail(chain, "load org", orgErr);
-  const orgId = orgs?.[0]?.id;
+  const orgId = await adminOrgId(supabase);
   if (!orgId) redirect(back(chain) + "error=no_org");
-
-  const { data: existing, error: findErr } = await supabase.from("provider_connections").select("id").eq("chain_id", chain).maybeSingle();
-  if (findErr) fail(chain, "find connection", findErr);
   if (endpoint && !/^https:\/\//.test(endpoint)) redirect(back(chain) + "error=https");
+  if (endpoint && !endpointOk(provider, endpoint)) redirect(back(chain) + "error=endpoint_host");
+
+  const { data: existing, error: findErr } = await supabase.from("provider_connections").select("id")
+    .eq("org_id", orgId).eq("chain_id", chain).maybeSingle();
+  if (findErr) fail(chain, "find connection", findErr);
   let id = existing?.id as string | undefined;
   if (!id) {
     const { data, error } = await supabase.from("provider_connections")
@@ -34,7 +51,8 @@ export async function saveConnection(form: FormData) {
     if (error) fail(chain, "insert connection", error);
     id = data.id;
   } else {
-    const { error } = await supabase.from("provider_connections").update({ name: provider, endpoint_url: endpoint }).eq("id", id);
+    const { error } = await supabase.from("provider_connections")
+      .update({ provider, name: provider, endpoint_url: endpoint }).eq("id", id).eq("org_id", orgId);
     if (error) fail(chain, "update connection", error);
   }
   if (key) {
@@ -49,7 +67,10 @@ export async function deleteApiKey(form: FormData) {
   const chain = String(form.get("chain_id"));
   if (!isSupportedChain(chain)) redirect("/connections?error=chain");
   const supabase = await createClient();
-  const { data: conn, error: findErr } = await supabase.from("provider_connections").select("id").eq("chain_id", chain).maybeSingle();
+  const orgId = await adminOrgId(supabase);
+  if (!orgId) redirect(back(chain) + "error=no_org");
+  const { data: conn, error: findErr } = await supabase.from("provider_connections").select("id")
+    .eq("org_id", orgId).eq("chain_id", chain).maybeSingle();
   if (findErr) fail(chain, "find connection", findErr);
   if (!conn) redirect(back(chain) + "error=no_conn");
   const { error } = await supabase.rpc("set_connection_api_key", { connection_id: conn.id, api_key: "" });

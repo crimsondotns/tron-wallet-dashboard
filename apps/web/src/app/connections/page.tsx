@@ -22,7 +22,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
   const { chain: picked, error, saved, deleted } = await searchParams;
   const { t } = await getT();
   const SUPPORTED = supported(t);
-  const errors: Record<string, string> = { no_org: t.conn.errNoOrg, https: t.conn.errHttps, no_conn: t.conn.errNoConn, chain: t.conn.errChain };
+  const errors: Record<string, string> = { no_org: t.conn.errNoOrg, https: t.conn.errHttps, endpoint_host: t.conn.errEndpointHost, no_conn: t.conn.errNoConn, chain: t.conn.errChain };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const email = (claims?.claims.email as string | undefined) ?? "";
