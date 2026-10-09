@@ -423,6 +423,7 @@ export const en = {
     noResponse: "{name} didn't respond",
     rpcFailed: "{name} reported a failure: {msg}",
     noBlock: "This endpoint doesn't return block data for this chain",
+    noHistory: "{name} has no history for this wallet (the endpoint doesn't keep old data). Use an RPC with full history, e.g. Helius",
     noEndpoint: "{name} has no free default for this chain; enter an endpoint URL",
   },
 } satisfies Dict;

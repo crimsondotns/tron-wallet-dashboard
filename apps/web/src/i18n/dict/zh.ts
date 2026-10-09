@@ -423,6 +423,7 @@ export const zh = {
     noResponse: "{name} 无响应",
     rpcFailed: "{name} 返回失败：{msg}",
     noBlock: "此 endpoint 不返回该链的区块数据",
+    noHistory: "{name} 没有此钱包的历史记录（该 endpoint 不保存旧数据）。请使用有完整历史的 RPC，例如 Helius",
     noEndpoint: "{name} 在此链没有免费默认地址，请填写 endpoint URL",
   },
 } satisfies Dict;

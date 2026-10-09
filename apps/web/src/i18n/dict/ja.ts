@@ -423,6 +423,7 @@ export const ja = {
     noResponse: "{name} から応答がありません",
     rpcFailed: "{name} が失敗を返しました：{msg}",
     noBlock: "この endpoint はこのチェーンのブロックデータを返しません",
+    noHistory: "{name} にこのウォレットの履歴がありません（endpoint が古いデータを保持していません）。Helius など履歴を完全に持つ RPC を使ってください",
     noEndpoint: "{name} にはこのチェーンの無料既定値がありません。endpoint URL を入力してください",
   },
 } satisfies Dict;

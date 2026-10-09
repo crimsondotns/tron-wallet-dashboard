@@ -422,6 +422,7 @@ export const th = {
     noResponse: "{name} ไม่ตอบ",
     rpcFailed: "{name} ตอบว่าไม่สำเร็จ: {msg}",
     noBlock: "endpoint นี้ไม่ตอบข้อมูล block ของเชนนี้",
+    noHistory: "{name} ไม่มีประวัติย้อนหลังของกระเป๋านี้ (endpoint ไม่ได้เก็บข้อมูลเก่า) ใช้ RPC ที่มีประวัติครบ เช่น Helius",
     noEndpoint: "{name} ไม่มี endpoint ฟรีสำหรับเชนนี้ ใส่ URL endpoint เอง",
   },
 };

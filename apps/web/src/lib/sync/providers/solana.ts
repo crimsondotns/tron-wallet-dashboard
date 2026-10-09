@@ -267,6 +267,11 @@ export const solanaRpc: ChainProvider = {
   async fetchPage(cfg, address, kind, { cursor }): Promise<Page> {
     if (kind === "token") return tokenPage(cfg, address, cursor);
     const sigs = await rpc<Sig[]>(cfg, "getSignaturesForAddress", sigsParams(address, cursor || null));
+    // Non-archival RPCs (PublicNode) answer [] for older wallets; a funded account has history.
+    if (!sigs.length && !cursor) {
+      const acc = await rpc<{ value: { lamports: number } | null }>(cfg, "getAccountInfo", [address, { encoding: "base64", dataSlice: { offset: 0, length: 0 } }]);
+      if ((acc?.value?.lamports ?? 0) > 0) throw new ProviderError("noHistory", { name: "Solana RPC" }, 400);
+    }
     const items = await transfers(cfg, sigs, "native");
     const times = sigs.map(msOf).filter((t) => t > 0);
     return {

@@ -61,8 +61,10 @@ export async function syncWallet(
         }
       }
       // 2) Backfill to the very first transaction. If a whole page shares one timestamp, page by offset.
+      //    Done with nothing stored (an earlier endpoint answered empty) is checked again from the top.
       let c: Cursor = (cur.backfill_cursor as Cursor | null) ?? { before: null, offset: 0 };
       let done = cur.done as boolean;
+      if (done && !knownUntil) { c = { before: null, offset: 0 }; done = false; }
       while (!done && Date.now() < deadline) {
         const page = await provider.fetchPage(cfg, wallet.address, kind, c);
         if (page.oldest === null) { done = true; await push([], c, true); break; }
