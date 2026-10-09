@@ -5,8 +5,10 @@
 --   3) ingest_transfers: from/to and hash regexes per family. Solana addresses are base58
 --      32-44 chars, transaction signatures base58 64-90 chars; tron/evm regexes are unchanged.
 --      Body = 20261008112355_ingest_row_validation.sql; only lines marked "-- [solana]" differ.
--- The provider id 'solana_rpc' must also be allowed by provider_connections.provider's check
--- (written separately).
+--      The earliest accepted timestamp moves from 2018-01-01 (TRON mainnet) to 2015-07-30
+--      (Ethereum genesis) so early Ethereum history isn't silently dropped.
+--   4) provider_connections.provider also allows the new EVM providers ('routescan',
+--      'blockscout') and 'solana_rpc'.
 
 -- 1) chain family + row
 do $$
@@ -87,7 +89,7 @@ begin
     where jsonb_typeof(r) = 'object'
   ), valid as (                                                                            -- [validation]
     select * from parsed
-    where ts >= '2018-01-01'::timestamptz and ts <= now() + interval '1 day'
+    where ts >= '2015-07-30'::timestamptz and ts <= now() + interval '1 day'
       and decimals is not null and log_index is not null
       and coalesce(r->>'from', '') ~ addr_re and coalesce(r->>'to', '') ~ addr_re
       and r->>'hash' ~ hash_re and (r->>'raw') ~ '^[0-9]{1,78}$'                           -- [solana]
@@ -133,7 +135,7 @@ begin
              select case when r->>'ts' ~ '^[0-9]{1,15}$' then to_timestamp((r->>'ts')::bigint / 1000.0) end as t
              from jsonb_array_elements(coalesce(p_rows, '[]')) r
              where jsonb_typeof(r) = 'object') x
-           where x.t >= '2018-01-01'::timestamptz and x.t <= now() + interval '1 day')),
+           where x.t >= '2015-07-30'::timestamptz and x.t <= now() + interval '1 day')),
          backfill_cursor = coalesce(p_backfill_cursor, c.backfill_cursor),
          done = c.done or coalesce(p_done, false),
          last_run_at = now(), last_error = null,
@@ -144,3 +146,8 @@ end;
 $$;
 revoke all on function public.ingest_transfers(uuid, text, jsonb, jsonb, boolean) from public, anon;
 grant execute on function public.ingest_transfers(uuid, text, jsonb, jsonb, boolean) to authenticated;
+
+-- 4) provider ids
+alter table public.provider_connections drop constraint if exists provider_connections_provider_check;
+alter table public.provider_connections add constraint provider_connections_provider_check
+  check (provider in ('tronscan', 'trongrid', 'etherscan', 'routescan', 'blockscout', 'alchemy', 'ankr', 'evm_rpc', 'solana_rpc'));
