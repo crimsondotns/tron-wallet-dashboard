@@ -50,6 +50,7 @@ export const ja = {
     email: "メールアドレス",
     password: "パスワード",
     emailPh: "you@company.com",
+    passwordPh: "パスワードを入力",
     confirmPassword: "パスワード（確認）",
     noAccount: "アカウントをお持ちでない方は",
     hasAccount: "アカウントをお持ちの方は",

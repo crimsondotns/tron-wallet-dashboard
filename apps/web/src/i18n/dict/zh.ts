@@ -50,6 +50,7 @@ export const zh = {
     email: "邮箱",
     password: "密码",
     emailPh: "you@company.com",
+    passwordPh: "输入您的密码",
     confirmPassword: "确认密码",
     noAccount: "还没有账户？",
     hasAccount: "已有账户？",

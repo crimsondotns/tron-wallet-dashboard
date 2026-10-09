@@ -28,7 +28,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </label>
         <label className="field">
           <span>{t.auth.password}</span>
-          <input className="input" name="password" type="password" required minLength={6} autoComplete="current-password" />
+          <input className="input" name="password" type="password" required minLength={6} autoComplete="current-password" placeholder={t.auth.passwordPh} />
         </label>
         <button className="btn-primary">{t.auth.signIn}</button>
       </form>

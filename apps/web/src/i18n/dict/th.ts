@@ -49,6 +49,7 @@ export const th = {
     email: "อีเมล",
     password: "รหัสผ่าน",
     emailPh: "you@company.com",
+    passwordPh: "กรอกรหัสผ่านของคุณ",
     confirmPassword: "ยืนยันรหัสผ่าน",
     noAccount: "ยังไม่มีบัญชี?",
     hasAccount: "มีบัญชีแล้ว?",

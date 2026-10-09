@@ -50,6 +50,7 @@ export const en = {
     email: "Email",
     password: "Password",
     emailPh: "you@company.com",
+    passwordPh: "Enter your password",
     confirmPassword: "Confirm password",
     noAccount: "No account yet?",
     hasAccount: "Already have an account?",
