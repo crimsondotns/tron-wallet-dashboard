@@ -69,7 +69,7 @@ export const ja = {
     errChain: "このネットワークにはまだ対応していません。",
     count: "{wallets} ウォレット · {chains} チェーン",
     noOrg: "このアカウントのワークスペースが見つかりません。一度ログアウトして再ログインしてください。",
-    addressPh: "アドレス（T… または 0x…）",
+    addressPh: "アドレス（T…、0x… または Solana）",
     labelPh: "ラベル（例：メイン金庫）",
     label: "ラベル",
     add: "追加",
@@ -156,6 +156,9 @@ export const ja = {
     trongridLabel: "TronGrid / 独自 RPC",
     trongridKey: "TronGrid の API key（QuickNode / GetBlock は URL に含められます）",
     trongridEndpoint: "https://api.trongrid.io または QuickNode / GetBlock / Chainstack の URL",
+    solanaLabel: "Solana RPC（無料のデフォルトまたは独自）",
+    solanaKey: "API キー（任意。Helius 形式の ?api-key= で送信）または URL に含める",
+    solanaEndpoint: "デフォルト https://solana-rpc.publicnode.com（無料）または Helius / QuickNode / Alchemy の URL",
   },
   key: {
     adminOnly: "key を表示できるのはワークスペース管理者のみです。",

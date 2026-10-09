@@ -5,8 +5,8 @@ import { ChainIcon } from "./ChainIcon";
 
 // Trust Wallet's open asset repo (served by jsDelivr): per-chain token logos keyed by contract.
 const CDN = "https://cdn.jsdelivr.net/gh/trustwallet/assets@master/blockchains";
-const REPO_CHAIN: Record<string, string> = { tron: "tron", ethereum: "ethereum", bsc: "smartchain", polygon: "polygon", arbitrum: "arbitrum", optimism: "optimism", base: "base" };
-const NATIVE: Record<string, string> = { tron: "TRX", ethereum: "ETH", bsc: "BNB", polygon: "POL", arbitrum: "ETH", optimism: "ETH", base: "ETH" };
+const REPO_CHAIN: Record<string, string> = { tron: "tron", ethereum: "ethereum", bsc: "smartchain", polygon: "polygon", arbitrum: "arbitrum", optimism: "optimism", base: "base", solana: "solana" };
+const NATIVE: Record<string, string> = { tron: "TRX", ethereum: "ETH", bsc: "BNB", polygon: "POL", arbitrum: "ETH", optimism: "ETH", base: "ETH", solana: "SOL" };
 // Well-known contracts by symbol. Matching on symbol alone could show a real logo on a fake
 // token of the same name, so only major tokens are listed; anything else gets a letter avatar.
 const KNOWN: Record<string, Record<string, string>> = {
@@ -20,6 +20,10 @@ const KNOWN: Record<string, Record<string, string>> = {
     SUN: "TSSMHYeV2uE9qYH95DqyoCuNCzEL1NvU3S",
     WIN: "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7",
     WTRX: "TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR",
+  },
+  solana: {
+    USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
   },
   ethereum: {
     USDT: "0xdAC17F958D2ee523a2206206994597C13D831ec7",

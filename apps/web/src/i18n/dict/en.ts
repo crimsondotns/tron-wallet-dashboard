@@ -69,7 +69,7 @@ export const en = {
     errChain: "This network isn't supported yet.",
     count: "{wallets} wallets · {chains} chains",
     noOrg: "No workspace found for this account. Try signing out and back in.",
-    addressPh: "Address (T… or 0x…)",
+    addressPh: "Address (T…, 0x… or Solana)",
     labelPh: "Label, e.g. Main treasury",
     label: "Label",
     add: "Add",
@@ -156,6 +156,9 @@ export const en = {
     trongridLabel: "TronGrid / your own RPC",
     trongridKey: "TronGrid API key (QuickNode / GetBlock can put it in the URL)",
     trongridEndpoint: "https://api.trongrid.io or a QuickNode / GetBlock / Chainstack URL",
+    solanaLabel: "Solana RPC (free default or your own)",
+    solanaKey: "Optional API key (sent as ?api-key=, Helius style) or put it in the URL",
+    solanaEndpoint: "Default https://solana-rpc.publicnode.com (free) or a Helius / QuickNode / Alchemy URL",
   },
   key: {
     adminOnly: "Only workspace admins can view the key.",

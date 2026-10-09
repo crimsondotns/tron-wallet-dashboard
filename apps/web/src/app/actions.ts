@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { adminOrgId } from "@/lib/org";
 import { isSupportedChain } from "@/lib/sync/chains";
+import { isSolanaAddress } from "@/lib/sync/solanaAddress";
 import { createClient } from "@/lib/supabase/server";
 
 // Redirect with an error code only; the page translates it. Never pass database messages through.
@@ -15,7 +16,9 @@ export async function addWallet(form: FormData) {
   const chain = String(form.get("chain_id") ?? "");
   if (!isSupportedChain(chain)) fail("chain");
   let address = String(form.get("address") ?? "").trim();
-  if (chain !== "tron") address = address.toLowerCase();
+  // Solana base58 is case-sensitive; only EVM hex is stored lowercase.
+  if (chain === "solana") { if (!isSolanaAddress(address)) fail("bad_address"); }
+  else if (chain !== "tron") address = address.toLowerCase();
   const supabase = await createClient();
   const orgId = await adminOrgId(supabase, String(form.get("org_id") ?? ""));
   if (!orgId) fail("not_allowed");

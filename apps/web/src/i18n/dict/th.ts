@@ -68,7 +68,7 @@ export const th = {
     errChain: "ยังไม่รองรับเครือข่ายนี้",
     count: "{wallets} กระเป๋า · {chains} เครือข่าย",
     noOrg: "ยังไม่พบพื้นที่ทำงานของบัญชีนี้ ลองออกจากระบบแล้วเข้าใหม่",
-    addressPh: "ที่อยู่กระเป๋า (T… หรือ 0x…)",
+    addressPh: "ที่อยู่กระเป๋า (T…, 0x… หรือ Solana)",
     labelPh: "ชื่อเรียก เช่น Treasury หลัก",
     label: "ชื่อเรียก",
     add: "เพิ่ม",
@@ -155,6 +155,9 @@ export const th = {
     trongridLabel: "TronGrid / RPC ของคุณ",
     trongridKey: "API key ของ TronGrid (QuickNode / GetBlock ใส่ไว้ใน URL ได้)",
     trongridEndpoint: "https://api.trongrid.io หรือ URL ของ QuickNode / GetBlock / Chainstack",
+    solanaLabel: "Solana RPC (ฟรีค่าเริ่มต้น หรือของคุณเอง)",
+    solanaKey: "API key ไม่บังคับ (ส่งแบบ ?api-key= ของ Helius) หรือใส่ไว้ใน URL",
+    solanaEndpoint: "ค่าเริ่มต้น https://solana-rpc.publicnode.com (ฟรี) หรือ URL ของ Helius / QuickNode / Alchemy",
   },
   key: {
     adminOnly: "เฉพาะผู้ดูแลองค์กรเท่านั้นที่ดู key ได้",

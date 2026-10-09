@@ -15,8 +15,11 @@ const supported = (t: Dict): Record<string, ProviderOption[]> => ({
     { value: "tronscan", label: "Tronscan", keyHint: t.conn.tronscanKey, endpointHint: t.conn.tronscanEndpoint },
     { value: "trongrid", label: t.conn.trongridLabel, keyHint: t.conn.trongridKey, endpointHint: t.conn.trongridEndpoint },
   ],
+  solana: [
+    { value: "solana_rpc", label: t.conn.solanaLabel, keyHint: t.conn.solanaKey, endpointHint: t.conn.solanaEndpoint },
+  ],
 });
-const SAMPLE_ADDRESS: Record<string, string> = { tron: "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G" };
+const SAMPLE_ADDRESS: Record<string, string> = { tron: "TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G", solana: "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9" };
 
 export default async function Connections({ searchParams }: { searchParams: Promise<{ chain?: string; error?: string; saved?: string; deleted?: string }> }) {
   const { chain: picked, error, saved, deleted } = await searchParams;

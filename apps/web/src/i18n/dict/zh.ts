@@ -69,7 +69,7 @@ export const zh = {
     errChain: "暂不支持该网络。",
     count: "{wallets} 个钱包 · {chains} 条链",
     noOrg: "未找到此账户的工作区。请尝试退出后重新登录。",
-    addressPh: "地址（T… 或 0x…）",
+    addressPh: "地址（T…、0x… 或 Solana）",
     labelPh: "备注名，例如 主金库",
     label: "备注名",
     add: "添加",
@@ -156,6 +156,9 @@ export const zh = {
     trongridLabel: "TronGrid / 自有 RPC",
     trongridKey: "TronGrid API key（QuickNode / GetBlock 可写在 URL 中）",
     trongridEndpoint: "https://api.trongrid.io 或 QuickNode / GetBlock / Chainstack 的 URL",
+    solanaLabel: "Solana RPC（免费默认或自有节点）",
+    solanaKey: "API 密钥（可选，以 Helius 的 ?api-key= 发送）或直接写在 URL 中",
+    solanaEndpoint: "默认 https://solana-rpc.publicnode.com（免费）或 Helius / QuickNode / Alchemy 的 URL",
   },
   key: {
     adminOnly: "只有工作区管理员可以查看 key。",

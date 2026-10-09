@@ -37,6 +37,12 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M8 13a5 5 0 10-4.98-5.5H9.7v1H3.02A5 5 0 008 13z" fill="#fff" />
     </>
   ),
+  solana: (
+    <>
+      <circle cx="8" cy="8" r="8" fill="#121212" />
+      <path d="M5.4 4.6h6.6l-1.4 1.5H4zm0 6.8h6.6l-1.4-1.5H4zm-1.4-2.65h6.6l1.4-1.5H5.4z" fill="#14f195" />
+    </>
+  ),
   optimism: (
     <>
       <circle cx="8" cy="8" r="8" fill="#ff0420" />
