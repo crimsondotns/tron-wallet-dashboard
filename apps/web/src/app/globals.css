@@ -200,7 +200,7 @@ a { text-decoration: none; }
 .dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dropdown-chevron { flex: none; color: var(--text-subdued); transition: transform 0.2s ease; }
 .dropdown-trigger[aria-expanded="true"] .dropdown-chevron { transform: rotate(180deg); }
-.chain-icon { flex: none; display: block; }
+.chain-icon { flex: none; display: block; border-radius: var(--radius-pill); }
 /* Popover: frosted glass, 16px radius, 12px rows (popover radius exception, see CLAUDE.md).
    The blur sits on .dropdown-pop; the scrolling .dropdown-list inside must not carry it. */
 .dropdown-pop, .account-menu, .row-menu-pop {
