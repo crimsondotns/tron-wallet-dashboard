@@ -39,7 +39,7 @@ begin
   select count(*) into n from public.wallets;            res := res || 'B wallets=' || n || ' (0) | ';
   select count(*) into n from public.transfers;          res := res || 'B transfers=' || n || ' (0) | ';
   select count(*) into n from public.edges;              res := res || 'B edges=' || n || ' (0) | ';
-  select count(*) into n from public.orgs;               res := res || 'B orgs=' || n || ' (1) | ';
+  select count(*) into n from public.orgs;               res := res || 'B orgs=' || n || ' (2) | ';  -- personal org (sign-up trigger) + Org B
   update public.wallets set label = 'hacked' where id = wa; get diagnostics n = row_count;
   res := res || 'B update A wallet rows=' || n || ' (0) | ';
   begin
