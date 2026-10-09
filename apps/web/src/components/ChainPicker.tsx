@@ -11,6 +11,6 @@ export function ChainPicker({ chains, current }: { chains: { id: string; name: s
   return (
     <Dropdown name="chain" label={t.common.chain} defaultValue={current}
       options={chains.map((c) => ({ value: c.id, label: `${c.name} · ${c.note}`, icon: c.id }))}
-      onChange={(v) => router.push(`/connections?chain=${v}`)} />
+      onChange={(v) => router.push(`/connections/?chain=${v}`)} />
   );
 }

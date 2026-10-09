@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { ChainIcon } from "@/components/ChainIcon";
@@ -5,9 +7,13 @@ import { ChainPicker } from "@/components/ChainPicker";
 import { ConnectionDetail, type ProviderOption } from "@/components/ConnectionDetail";
 import { fmt } from "@/i18n/config";
 import type { Dict } from "@/i18n/dict";
-import { getT } from "@/i18n/server";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { useT } from "@/i18n/client";
+import { useAuth } from "@/components/AuthProvider";
+import { PageLoader } from "@/components/PageLoader";
 import { isSupportedChain } from "@/lib/sync/chains";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/client";
 
 // Providers the browser sync supports today, per chain.
 const supported = (t: Dict): Record<string, ProviderOption[]> => ({
@@ -39,14 +45,24 @@ const SAMPLE_ADDRESS: Record<string, string> = {
   ethereum: EVM_SAMPLE, bsc: EVM_SAMPLE, polygon: EVM_SAMPLE, arbitrum: EVM_SAMPLE, base: EVM_SAMPLE, optimism: EVM_SAMPLE,
 };
 
-export default async function Connections({ searchParams }: { searchParams: Promise<{ chain?: string; error?: string; saved?: string; deleted?: string }> }) {
-  const { chain: picked, error, saved, deleted } = await searchParams;
-  const { t } = await getT();
+type Params = { chain?: string; error?: string; saved?: string; deleted?: string };
+
+export default function Connections() {
+  return <Suspense><View /></Suspense>;
+}
+
+function View() {
+  const sp = useSearchParams();
+  const t = useT();
+  const email = useAuth()?.email ?? "";
+  const p: Params = { chain: sp.get("chain") ?? undefined, error: sp.get("error") ?? undefined, saved: sp.get("saved") ?? undefined, deleted: sp.get("deleted") ?? undefined };
+  return <PageLoader build={() => build(p, t, email)} deps={[sp.toString(), t, email]} fallback={<AppShell active="connections">{null}</AppShell>} />;
+}
+
+async function build({ chain: picked, error, saved, deleted }: Params, t: Dict, email: string) {
   const SUPPORTED = supported(t);
   const errors: Record<string, string> = { no_org: t.conn.errNoOrg, https: t.conn.errHttps, endpoint_host: t.conn.errEndpointHost, no_conn: t.conn.errNoConn, chain: t.conn.errChain };
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const email = (claims?.claims.email as string | undefined) ?? "";
+  const supabase = createClient();
   const [{ data: chains, error: chainsErr }, { data: conns, error: connsErr }] = await Promise.all([
     supabase.from("chains").select("id, name").order("family", { ascending: false }).order("name"),
     supabase.from("provider_connections").select("chain_id, provider, endpoint_url, api_key_secret_id"),
@@ -87,7 +103,7 @@ export default async function Connections({ searchParams }: { searchParams: Prom
       <div className="md">
         <nav className="md-list" aria-label={t.common.chain}>
           {list.map((c) => (
-            <Link key={c.id} href={`/connections?chain=${c.id}`} className={`md-item${c.options ? "" : " is-soon"}`} aria-current={c.id === current?.id ? "page" : undefined}>
+            <Link key={c.id} href={`/connections/?chain=${c.id}`} className={`md-item${c.options ? "" : " is-soon"}`} aria-current={c.id === current?.id ? "page" : undefined}>
               <ChainIcon chain={c.id} size={24} />
               <span className="md-item-text"><strong>{c.name}</strong><span className="caption">{c.note}</span></span>
               {c.conn && <i className="dot dot-on" aria-label={t.conn.connected} />}

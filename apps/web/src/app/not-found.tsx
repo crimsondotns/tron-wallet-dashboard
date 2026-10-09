@@ -1,8 +1,10 @@
-import Link from "next/link";
-import { getT } from "@/i18n/server";
+"use client";
 
-export default async function NotFound() {
-  const { t } = await getT();
+import Link from "next/link";
+import { useT } from "@/i18n/client";
+
+export default function NotFound() {
+  const t = useT();
   return (
     <main className="state-page state-page-center">
       <h1>{t.common.notFoundTitle}</h1>

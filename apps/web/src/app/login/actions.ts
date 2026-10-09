@@ -1,40 +1,40 @@
-"use server";
+"use client";
 
-import { createHash } from "node:crypto";
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
-import { getLocale } from "@/i18n/server";
+import { currentLocale, savedTimeZone, writeCookie } from "@/i18n/prefs";
 import { isTimeZone, TZ_COOKIE } from "@/i18n/tz";
-import { createClient } from "@/lib/supabase/server";
+import { asset } from "@/lib/base";
+import { go } from "@/lib/nav";
+import { createClient } from "@/lib/supabase/client";
 
 function creds(form: FormData) {
   return { email: String(form.get("email") ?? ""), password: String(form.get("password") ?? "") };
 }
 
 export async function signIn(form: FormData) {
-  const supabase = await createClient();
+  const supabase = createClient();
   const { data, error } = await supabase.auth.signInWithPassword(creds(form));
   if (error) {
-    if (error.code === "invalid_credentials") redirect("/login?error=invalid");
-    if (error.code === "email_not_confirmed") redirect("/login?error=not_confirmed");
+    if (error.code === "invalid_credentials") return go("/login/?error=invalid");
+    if (error.code === "email_not_confirmed") return go("/login/?error=not_confirmed");
     console.error("[auth] signIn failed:", error.code, error.message);
-    redirect("/login?error=generic");
+    return go("/login/?error=generic");
   }
   // Accounts created before language tracking (or on another device) get the current UI language,
   // which auth email templates read from user_metadata.locale.
-  const locale = await getLocale();
+  const locale = currentLocale();
   if (data.user?.user_metadata?.locale !== locale) await supabase.auth.updateUser({ data: { locale } });
   // A time zone chosen on another device follows the account (display preference only).
-  const jar = await cookies(), tz = data.user?.user_metadata?.tz;
-  if (!isTimeZone(jar.get(TZ_COOKIE)?.value) && isTimeZone(tz)) jar.set(TZ_COOKIE, tz, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
-  redirect("/");
+  const tz = data.user?.user_metadata?.tz;
+  if (!savedTimeZone() && isTimeZone(tz)) writeCookie(TZ_COOKIE, tz);
+  go("/");
 }
 
-// Supabase's leaked-password check is Pro-only, so query HIBP ourselves (k-anonymity: only the
-// first 5 hex chars of the SHA-1 leave the server). Fails open so an HIBP outage can't block sign-up.
+// Breached-password check against HIBP (k-anonymity: only the first 5 hex chars of the SHA-1
+// leave the browser). Runs client-side now, so it guides users but can be bypassed. Fails open.
 async function isPwned(password: string) {
-  const hash = createHash("sha1").update(password).digest("hex").toUpperCase();
   try {
+    const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(password));
+    const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
     const res = await fetch(`https://api.pwnedpasswords.com/range/${hash.slice(0, 5)}`, {
       headers: { "Add-Padding": "true" },
       signal: AbortSignal.timeout(3000),
@@ -54,26 +54,24 @@ async function isPwned(password: string) {
 
 export async function signUp(form: FormData) {
   const password = String(form.get("password") ?? "");
-  if (password !== form.get("confirm")) redirect("/register?error=mismatch");
-  if (password.length < 8) redirect("/register?error=weak");
-  if (await isPwned(password)) redirect("/register?error=pwned");
-  const supabase = await createClient();
-  const origin = (await headers()).get("origin") ?? "";
+  if (password !== form.get("confirm")) return go("/register/?error=mismatch");
+  if (password.length < 8) return go("/register/?error=weak");
+  if (await isPwned(password)) return go("/register/?error=pwned");
+  const supabase = createClient();
   const { data, error } = await supabase.auth.signUp({
     ...creds(form),
-    options: { emailRedirectTo: `${origin}/auth/callback`, data: { locale: await getLocale() } },
+    options: { emailRedirectTo: `${location.origin}${asset("/auth/callback/")}`, data: { locale: currentLocale() } },
   });
   if (error) {
-    if (error.code === "user_already_exists" || error.code === "email_exists") redirect("/register?error=exists");
+    if (error.code === "user_already_exists" || error.code === "email_exists") return go("/register/?error=exists");
     console.error("[auth] signUp failed:", error.code, error.message);
-    redirect("/register?error=generic");
+    return go("/register/?error=generic");
   }
-  if (!data.session) redirect("/login?message=check-email");
-  redirect("/");
+  if (!data.session) return go("/login/?message=check-email");
+  go("/");
 }
 
 export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+  await createClient().auth.signOut();
+  go("/login/");
 }

@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import * as fontkit from "fontkit";
-import PDFDocument from "pdfkit";
+import PDFDocument from "pdfkit/js/pdfkit.standalone";
+import { asset } from "@/lib/base";
 
 // Ledger PDF (A4 landscape).
 export type PdfLine = { time: string; dir: "IN" | "OUT"; dirLabel: string; name: string; address: string; amount: number; amountText: string; tx: string };
@@ -20,24 +19,27 @@ export type PdfInput = {
   footer: string;                   // "{page} / {pages}" style, filled per page
 };
 
-// Bundled fonts (assets/fonts, SIL OFL; traced into the export route via next.config.ts).
+// Fonts in public/fonts (SIL OFL), fetched only when a PDF is made (the browser caches them).
 // Per character: Noto Sans (Latin, − … ·), then Noto Sans Thai, then Noto Sans SC/JP (Han/kana
 // and symbols like ≥ ≤ →), else an ASCII stand-in. pdfkit embeds only the glyphs used.
 type Face = "latin" | "thai" | "cjk";
-const FONT_DIR = path.join(process.cwd(), "assets", "fonts");
 const FILES = {
   latin: ["NotoSans-Regular.ttf", "NotoSans-Bold.ttf"],
   thai: ["NotoSansThai-Regular.ttf", "NotoSansThai-Bold.ttf"],
   sc: ["NotoSansSC-Regular.otf", "NotoSansSC-Bold.otf"],
   jp: ["NotoSansJP-Regular.otf", "NotoSansJP-Bold.otf"],
 } as const;
-type Loaded = { buf: [Buffer, Buffer]; has: (cp: number) => boolean };
+type Loaded = { buf: [Uint8Array, Uint8Array]; has: (cp: number) => boolean };
 const fontCache = new Map<string, Loaded>();
-function load(key: keyof typeof FILES): Loaded {
+async function load(key: keyof typeof FILES): Promise<Loaded> {
   const hit = fontCache.get(key);
   if (hit) return hit;
-  const buf = FILES[key].map((f) => fs.readFileSync(path.join(FONT_DIR, f))) as [Buffer, Buffer];
-  const font = fontkit.create(buf[0]) as fontkit.Font;
+  const buf = (await Promise.all(FILES[key].map(async (f) => {
+    const res = await fetch(asset(`/fonts/${f}`));
+    if (!res.ok) throw new Error(`font ${f}: HTTP ${res.status}`);
+    return new Uint8Array(await res.arrayBuffer());
+  }))) as [Uint8Array, Uint8Array];
+  const font = fontkit.create(buf[0] as Buffer) as fontkit.Font;
   const v = { buf, has: (cp: number) => font.hasGlyphForCodePoint(cp) };
   fontCache.set(key, v);
   return v;
@@ -46,21 +48,21 @@ const ASCII: Record<string, string> = { "≥": ">=", "≤": "<=", "→": "->", "
 
 const C = { text: "#121212", sub: "#5f5f5f", line: "#e3e3e3", band: "#f6f6f6", gold: "#b8892c", in: "#1a7f37", out: "#c4122a" };
 
-export async function buildPdf(d: PdfInput): Promise<Buffer> {
+export async function buildPdf(d: PdfInput): Promise<Blob> {
   const all = [d.title, ...d.meta.flat(), ...d.kpis.flat(), d.topTitle, ...d.topHead, ...d.top.flat(), d.txTitle, ...d.txHead,
     ...d.lines.flatMap((l) => [l.time, l.dirLabel, l.name, l.address, l.amountText, l.tx]), d.note ?? "", d.footer].join("");
-  const latin = load("latin"), thai = load("thai");
+  const [latin, thai] = await Promise.all([load("latin"), load("thai")]);
   // CJK font only when some character needs it (it is the large one).
   let cjk: Loaded | null = null;
   for (const ch of new Set(all)) {
     const cp = ch.codePointAt(0)!;
-    if (cp > 32 && !latin.has(cp) && !thai.has(cp)) { cjk = load(d.locale === "ja" ? "jp" : "sc"); break; }
+    if (cp > 32 && !latin.has(cp) && !thai.has(cp)) { cjk = await load(d.locale === "ja" ? "jp" : "sc"); break; }
   }
 
   const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 36, bufferPages: true, info: { Title: d.title, Creator: "XCap Insight" } });
-  doc.registerFont("latin-r", latin.buf[0]); doc.registerFont("latin-b", latin.buf[1]);
-  doc.registerFont("thai-r", thai.buf[0]); doc.registerFont("thai-b", thai.buf[1]);
-  if (cjk) { doc.registerFont("cjk-r", cjk.buf[0]); doc.registerFont("cjk-b", cjk.buf[1]); }
+  doc.registerFont("latin-r", latin.buf[0] as Buffer); doc.registerFont("latin-b", latin.buf[1] as Buffer);
+  doc.registerFont("thai-r", thai.buf[0] as Buffer); doc.registerFont("thai-b", thai.buf[1] as Buffer);
+  if (cjk) { doc.registerFont("cjk-r", cjk.buf[0] as Buffer); doc.registerFont("cjk-b", cjk.buf[1] as Buffer); }
   const faceOf = (ch: string): Face | null => {
     const cp = ch.codePointAt(0)!;
     return latin.has(cp) ? "latin" : thai.has(cp) ? "thai" : cjk?.has(cp) ? "cjk" : null;
@@ -80,9 +82,9 @@ export async function buildPdf(d: PdfInput): Promise<Buffer> {
   const setFont = (face: Face, bold?: boolean) => doc.font(`${face}-${bold ? "b" : "r"}`);
   const measure = (str: string, size: number, bold?: boolean) =>
     runs(str).reduce((w, r) => w + setFont(r.face, bold).fontSize(size).widthOfString(r.s), 0);
-  const chunks: Buffer[] = [];
-  doc.on("data", (c: Buffer) => chunks.push(c));
-  const done = new Promise<Buffer>((ok) => doc.on("end", () => ok(Buffer.concat(chunks))));
+  const chunks: Uint8Array[] = [];
+  doc.on("data", (c: Uint8Array) => chunks.push(new Uint8Array(c)));
+  const done = new Promise<Blob>((ok) => doc.on("end", () => ok(new Blob(chunks as BlobPart[], { type: "application/pdf" }))));
 
   const L = doc.page.margins.left, W = doc.page.width - L - doc.page.margins.right;
   const bottom = () => doc.page.height - doc.page.margins.bottom - 16;

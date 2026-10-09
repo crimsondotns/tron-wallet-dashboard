@@ -1,11 +1,11 @@
-import type { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-type Db = Awaited<ReturnType<typeof createClient>>;
+type Db = SupabaseClient;
 
 // The caller's memberships, oldest first (the personal org created at sign-up comes first).
 export async function myOrgs(db: Db): Promise<{ org_id: string; role: string }[]> {
-  const { data: claims } = await db.auth.getClaims();
-  const uid = claims?.claims.sub;
+  const { data: session } = await db.auth.getSession();
+  const uid = session.session?.user.id;
   if (!uid) return [];
   const { data } = await db.from("org_members").select("org_id, role").eq("user_id", uid).order("created_at");
   return data ?? [];
@@ -13,7 +13,7 @@ export async function myOrgs(db: Db): Promise<{ org_id: string; role: string }[]
 
 export const isAdminRole = (role?: string | null) => role === "owner" || role === "admin";
 
-// Org the caller administers (owner/admin), or null. Server actions write only into this org,
+// Org the caller administers (owner/admin), or null. Client actions write only into this org,
 // and every lookup they do is filtered by it.
 export async function adminOrgId(db: Db, orgId?: string | null): Promise<string | null> {
   const orgs = (await myOrgs(db)).filter((m) => isAdminRole(m.role));

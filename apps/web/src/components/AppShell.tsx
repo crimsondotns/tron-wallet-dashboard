@@ -1,6 +1,10 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-import { getT } from "@/i18n/server";
+import { useT } from "@/i18n/client";
+import { asset } from "@/lib/base";
+import { useAuth } from "./AuthProvider";
 import { AccountMenu } from "./AccountMenu";
 
 type NavKey = "wallets" | "overview" | "connections" | "settings";
@@ -11,13 +15,14 @@ const NAV: { key: NavKey; href?: string }[] = [
   { key: "settings" },
 ];
 
-export async function AppShell({ email, active, children }: { email?: string; active: NavKey; children: React.ReactNode }) {
-  const { t } = await getT();
+export function AppShell({ active, children }: { email?: string; active: NavKey; children: React.ReactNode }) {
+  const t = useT();
+  const email = useAuth()?.email;
   return (
     <div className="shell">
       <aside className="side">
         <div className="side-brand">
-          <Image src="/apple-icon.png" alt="" width={28} height={28} />
+          <Image src={asset("/apple-icon.png")} alt="" width={28} height={28} />
           XCap Insight
         </div>
         <nav className="side-nav" aria-label={t.nav.main}>

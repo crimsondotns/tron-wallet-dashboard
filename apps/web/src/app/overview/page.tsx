@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Pagination } from "@/components/Pagination";
 import { PAGE_SIZES } from "@/components/pageSizes";
@@ -17,9 +19,15 @@ import { RadialMap, type GraphEdge, type Label } from "@/components/overview/Rad
 import { RANGES, type Range } from "@/components/overview/ranges";
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
 import { addDays, dayIn, dayStartIso } from "@/i18n/tz";
-import { getT, getTimeZone } from "@/i18n/server";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { useLocale, useT, useTimeZone } from "@/i18n/client";
+import type { Locale } from "@/i18n/config";
+import type { Dict } from "@/i18n/dict";
+import { useAuth } from "@/components/AuthProvider";
+import { PageLoader } from "@/components/PageLoader";
 import { isAdminRole, roleIn } from "@/lib/org";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/client";
 
 type Summary = {
   token: string | null; tokens: string[]; last_day: string | null;
@@ -30,10 +38,36 @@ type Summary = {
 type Tab = "summary" | "map" | "tx";
 const short = (a: string) => (a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
 
-export default async function Overview({ searchParams }: {
-  searchParams: Promise<{ tab?: string; wallet?: string; token?: string; range?: string; page?: string; size?: string; cp?: string; start?: string; end?: string; sort?: string; order?: string; min?: string; max?: string }>;
-}) {
-  const sp = await searchParams;
+type Params = { tab?: string; wallet?: string; token?: string; range?: string; page?: string; size?: string; cp?: string; start?: string; end?: string; sort?: string; order?: string; min?: string; max?: string };
+
+export default function Overview() {
+  return <Suspense><View /></Suspense>;
+}
+
+function View() {
+  const params = useSearchParams();
+  const t = useT(), locale = useLocale(), tz = useTimeZone();
+  const email = useAuth()?.email;
+  const sp = Object.fromEntries(params.entries()) as Params;
+  return <PageLoader build={() => build(sp, { t, locale, tz, email })} deps={[params.toString(), t, locale, tz, email]} fallback={<Loading t={t} />} />;
+}
+
+// Mirrors the overview layout (title, KPI row, chart card) inside the app shell while loading.
+function Loading({ t }: { t: Dict }) {
+  return (
+    <AppShell active="overview">
+      <div className="state-page state-page-wide" aria-busy="true" aria-label={t.common.loading}>
+        <span className="skel skel-title" />
+        <div className="skel-kpis">
+          {[0, 1, 2, 3].map((i) => <span key={i} className="skel skel-kpi" />)}
+        </div>
+        <span className="skel skel-block" />
+      </div>
+    </AppShell>
+  );
+}
+
+async function build(sp: Params, { t, locale, tz, email }: { t: Dict; locale: Locale; tz: string; email?: string }) {
   const tab: Tab = sp.tab === "map" || sp.tab === "tx" ? sp.tab : "summary";
   const range: Range = (RANGES as readonly string[]).includes(sp.range ?? "") ? (sp.range as Range) : "all"; // default: all time
   const page = Math.max(1, Number(sp.page) || 1);
@@ -46,13 +80,10 @@ export default async function Overview({ searchParams }: {
   const isoOrNull = (v?: string) => (tab === "tx" && v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
   const startTs = isoOrNull(sp.start), endTs = isoOrNull(sp.end);
   const minAmt = tab === "tx" ? num0(sp.min) : null, maxAmt = tab === "tx" ? num0(sp.max) : null;
-  const { t, locale } = await getT();
   const tag = LOCALE_TAGS[locale];
   const num = (n: number) => Number(n).toLocaleString(tag, { maximumFractionDigits: 2 });
 
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const email = claims?.claims.email as string | undefined;
+  const supabase = createClient();
   const { data: walletRows, error: walletsErr } = await supabase.from("wallets").select("id, org_id, address, label, chain_id").order("created_at");
   const wallets = walletRows ?? [];
   // Always one wallet: the one in the URL, else the first.
@@ -64,7 +95,6 @@ export default async function Overview({ searchParams }: {
 
   // Calendar days in the user's time zone, inclusive. "All time" starts far enough back to cover
   // any chain history. (The summary RPC still buckets by UTC day; raw transfers use exact instants.)
-  const tz = await getTimeZone();
   const to = dayIn(new Date(), tz);
   const from = range === "all" ? "2015-01-01" : addDays(to, -(Number(range) - 1));
 
@@ -159,12 +189,12 @@ export default async function Overview({ searchParams }: {
   const tabHref = (k: Tab) => {
     const p = new URLSearchParams(Object.entries(sp).filter(([key, v]) => v && key !== "tab" && key !== "page") as [string, string][]);
     if (k !== "summary") p.set("tab", k);
-    return `/overview${p.size ? `?${p}` : ""}`;
+    return `/overview/${p.size ? `?${p}` : ""}`;
   };
   const rangeHref = (r: Range) => {
     const p = new URLSearchParams(Object.entries(sp).filter(([k, v]) => v && k !== "page") as [string, string][]);
     p.set("range", r);
-    return `/overview?${p}`;
+    return `/overview/?${p}`;
   };
   const max = Math.max(1, ...(s?.top ?? []).map((c) => Number(c.in) + Number(c.out)));
   const net = Number(s?.in ?? 0) - Number(s?.out ?? 0);
@@ -186,7 +216,7 @@ export default async function Overview({ searchParams }: {
     p.set("tab", "tx");
     if (col === "time") p.delete("sort"); else p.set("sort", col);
     if (nextAsc) p.set("order", "asc"); else p.delete("order");
-    return `/overview?${p}`;
+    return `/overview/?${p}`;
   };
   const sortLink = (col: "time" | "amount", label: string) => {
     const on = sort === col;

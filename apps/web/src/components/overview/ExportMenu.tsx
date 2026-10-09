@@ -3,15 +3,16 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { fmt } from "@/i18n/config";
-import { useT, useTimeZone } from "@/i18n/client";
+import { useLocale, useT, useTimeZone } from "@/i18n/client";
 import { toast } from "../Toaster";
 import { dayEndIso, dayStartIso, toLocalInput } from "./TimeFilter";
 
 // Export button → dialog: file type, date period, and whether to apply the table's
-// filters (counterparty, amount range, sort). Downloads /overview/export.
+// filters (counterparty, amount range, sort). Builds the file in the browser and downloads it.
 export function ExportMenu({ wallet, rangeStart }: { wallet: string; rangeStart: string | null }) {
   const t = useT();
   const tz = useTimeZone();
+  const locale = useLocale();
   const params = useSearchParams();
   const ref = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -60,10 +61,10 @@ export function ExportMenu({ wallet, rangeStart }: { wallet: string; rangeStart:
     if (start) p.set("start", dayStartIso(start, tz));
     if (end) p.set("end", dayEndIso(end, tz));
     try {
-      const res = await fetch(`/overview/export?${p}`);
-      if (!res.ok) throw new Error(String(res.status));
-      const name = decodeURIComponent(res.headers.get("Content-Disposition")?.match(/filename\*=UTF-8''([^;]+)/)?.[1] ?? `export.${format}`);
-      const url = URL.createObjectURL(await res.blob());
+      // Built in the browser (no server on GitHub Pages); ExcelJS/pdfkit load only on first export.
+      const { exportOverview } = await import("@/lib/export/overview");
+      const { blob, name } = await exportOverview(p, { t, locale, tz });
+      const url = URL.createObjectURL(blob);
       const a = Object.assign(document.createElement("a"), { href: url, download: name });
       document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);

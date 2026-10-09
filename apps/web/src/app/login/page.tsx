@@ -1,11 +1,20 @@
+"use client";
+
 import Link from "next/link";
 import { AuthShell, Notice } from "@/components/AuthShell";
-import { getT } from "@/i18n/server";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { useT } from "@/i18n/client";
 import { signIn } from "./actions";
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; message?: string }> }) {
-  const { error, message } = await searchParams;
-  const { t } = await getT();
+export default function LoginPage() {
+  return <Suspense><View /></Suspense>;
+}
+
+function View() {
+  const sp = useSearchParams();
+  const error = sp.get("error") ?? undefined, message = sp.get("message") ?? undefined;
+  const t = useT();
   const messages: Record<string, string> = { "check-email": t.auth.checkEmail };
   const errors: Record<string, string> = {
     // Supabase confirms the email before redirecting here, so a failed auto sign-in

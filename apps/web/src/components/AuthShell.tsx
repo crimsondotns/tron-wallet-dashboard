@@ -1,11 +1,13 @@
+"use client";
+
 import Link from "next/link";
-import { getT } from "@/i18n/server";
+import { useT } from "@/i18n/client";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { LiquidityField } from "./LiquidityField";
 import { LogoHero } from "./LogoHero";
 
-export async function AuthShell({ mode, children }: { mode: "login" | "register"; children: React.ReactNode }) {
-  const { t } = await getT();
+export function AuthShell({ mode, children }: { mode: "login" | "register"; children: React.ReactNode }) {
+  const t = useT();
   return (
     <main className="auth">
       <aside className="auth-brand">

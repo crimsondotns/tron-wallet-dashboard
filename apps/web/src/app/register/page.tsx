@@ -1,11 +1,20 @@
+"use client";
+
 import Link from "next/link";
 import { AuthShell, Notice } from "@/components/AuthShell";
-import { getT } from "@/i18n/server";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { useT } from "@/i18n/client";
 import { signUp } from "../login/actions";
 
-export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
-  const { t } = await getT();
+export default function RegisterPage() {
+  return <Suspense><View /></Suspense>;
+}
+
+function View() {
+  const sp = useSearchParams();
+  const error = sp.get("error") ?? undefined;
+  const t = useT();
   const errors: Record<string, string> = { mismatch: t.auth.errMismatch, exists: t.auth.errExists, weak: t.auth.errWeak, pwned: t.auth.errPwned };
   return (
     <AuthShell mode="register">

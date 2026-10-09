@@ -1,53 +1,50 @@
-import { PassThrough, Readable } from "node:stream";
 import ExcelJS from "exceljs";
 import { RANGES, type Range } from "@/components/overview/ranges";
 import { fmt, fmtDateTime, LOCALE_TAGS } from "@/i18n/config";
 import { buildPdf } from "@/lib/export/pdf";
-import { getT, getTimeZone } from "@/i18n/server";
+import type { Locale } from "@/i18n/config";
+import type { Dict } from "@/i18n/dict";
 import { addDays, dayIn, dayStartIso, toWallClock, tzOffsetLabel } from "@/i18n/tz";
 import { explorerLink } from "@/lib/explorer";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/client";
 
-// GET /overview/export?format=xlsx|pdf plus the overview's filters (wallet, token, range, cp,
-// min, max, sort, order). Optional start/end (ISO datetimes) override the range. Totals and top
-// counterparties are computed from the exported transfers, so they match the filters. Runs as the signed-in user, so RLS limits it to their org.
+// Overview export, built in the browser: format=xlsx|pdf plus the overview's filters (wallet,
+// token, range, cp, min, max, sort, order). Optional start/end (ISO datetimes) override the range.
+// Totals and top counterparties are computed from the exported transfers, so they match the
+// filters. Runs as the signed-in user, so RLS limits it to their org.
 //
 // Transfers are read with keyset pagination on (ts, id) or (amount, id) — id is the unique
 // tie-breaker, so no row repeats or goes missing between pages. Pass 1 aggregates totals and
-// top counterparties; pass 2 streams rows straight into the XLSX (ExcelJS streaming writer),
-// so memory stays flat regardless of row count.
-export const maxDuration = 300; // seconds; two passes over up to MAX_ROWS rows
+// top counterparties; pass 2 writes every row into the XLSX workbook (held in memory).
+export class ExportError extends Error {}
 const MAX_ROWS = 100_000;
 const BATCH = 1000; // PostgREST's default max rows per request
 const PDF_MAX = 5000; // ~170 pages; the full list is in the Excel export
 // amount comes back as text (numeric(78,18) does not fit a JS number exactly; the cursor must be exact).
 type Row = { id: number; ts: string; dir: string; amount: string; token_symbol: string; from_addr: string; to_addr: string; tx_hash: string; status: string };
 
-export async function GET(req: Request) {
-  const sp = new URL(req.url).searchParams;
+export async function exportOverview(sp: URLSearchParams, { t, locale, tz }: { t: Dict; locale: Locale; tz: string }): Promise<{ blob: Blob; name: string }> {
   const format = sp.get("format") === "pdf" ? "pdf" : "xlsx";
   const useNames = sp.get("names") !== "0";
-  const { t, locale } = await getT();
   const tag = LOCALE_TAGS[locale];
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  if (!claims?.claims.sub) return new Response("Unauthorized", { status: 401 });
+  const supabase = createClient();
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session) throw new ExportError("Unauthorized");
 
   const { data: walletRows } = await supabase.from("wallets").select("id, org_id, address, label, chain_id").order("created_at");
   const wallets = walletRows ?? [];
   const w = wallets.find((x) => x.id === sp.get("wallet")) ?? wallets[0];
-  if (!w) return new Response("No wallet", { status: 404 });
+  if (!w) throw new ExportError("No wallet");
 
   const range: Range = (RANGES as readonly string[]).includes(sp.get("range") ?? "") ? (sp.get("range") as Range) : "all";
   const today = new Date();
   // Days and times in the user's time zone (Excel cells get that zone's wall-clock time).
-  const tz = await getTimeZone();
   const tzName = `${tz} (${tzOffsetLabel(tz, today.getTime())})`;
   const to = dayIn(today, tz);
   const from = range === "all" ? "2015-01-01" : addDays(to, -(Number(range) - 1));
   const { data: summaryRaw } = await supabase.rpc("overview_summary", { p_from: from, p_to: to, p_token: sp.get("token") || null, p_wallets: [w.id] });
   const token = (summaryRaw as { token: string | null } | null)?.token;
-  if (!token) return new Response("No data", { status: 404 });
+  if (!token) throw new ExportError("No data");
 
   const num0 = (v: string | null) => (v && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null);
   const cp = (sp.get("cp") ?? "").replace(/[^A-Za-z0-9]/g, "").slice(0, 64);
@@ -111,7 +108,7 @@ export async function GET(req: Request) {
   const kept: Row[] = [];
   const agg = new Map<string, { address: string; in: number; out: number; tx: number }>();
   let sIn = 0, sOut = 0, count = 0;
-  try {
+  {
     for await (const page of transfers(keep ? ROW : BASE, MAX_ROWS)) {
       for (const r of page) {
         const a = Number(r.amount), c = other(r);
@@ -122,8 +119,6 @@ export async function GET(req: Request) {
       }
       count += page.length;
     }
-  } catch (e) {
-    return new Response((e as Error).message, { status: 500 });
   }
   const capped = count >= MAX_ROWS;
   const s = { in: sIn, out: sOut, tx: count, top: [...agg.values()].sort((x, y) => y.in + y.out - (x.in + x.out)).slice(0, 20) };
@@ -163,21 +158,16 @@ export async function GET(req: Request) {
       note: count > PDF_MAX ? fmt(t.ov.expCapped, { n: PDF_MAX.toLocaleString(tag) }) : undefined,
       footer: `XCap Insight · {page} / {pages}`,
     });
-    return new Response(new Uint8Array(pdf), {
-      headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(stamp)}.pdf`, "Cache-Control": "no-store" },
-    });
+    return { blob: pdf, name: `${stamp}.pdf` };
   }
 
-  // XLSX, streamed. Summary sheet first (it is complete after pass 1), then pass 2 writes every
-  // transfer page by page and commits rows as it goes.
-  const out = new PassThrough();
-  const wb = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: out, useStyles: true, useSharedStrings: false });
+  // XLSX: summary sheet first (complete after pass 1), then pass 2 adds every transfer.
+  const wb = new ExcelJS.Workbook();
   wb.creator = "XCap Insight";
   wb.created = today;
   const bold = { bold: true };
   const numFmt = "#,##0.######";
 
-  const write = async () => {
     // Sheet 1: summary + top counterparties.
     const sum = wb.addWorksheet(t.ov.tabSummary);
     sum.columns = [{ width: 28 }, { width: 24 }, { width: 44 }, { width: 18 }, { width: 18 }, { width: 12 }];
@@ -199,7 +189,6 @@ export async function GET(req: Request) {
       const r = sum.addRow([l?.name ?? "", typeLabel(l?.type), c.address, c.in, c.out, c.tx]);
       r.getCell(4).numFmt = numFmt; r.getCell(5).numFmt = numFmt;
     }
-    sum.commit();
 
     // Sheet 2: every transfer.
     const head = [t.test.colTime, t.ov.colWallet, t.test.colDir, t.ov.expCpName, t.test.colCounterparty, t.ov.type, t.test.colAmount, t.ov.token, t.ov.expStatus, t.ov.expTx, t.ov.expLink];
@@ -218,22 +207,9 @@ export async function GET(req: Request) {
         x.getCell(1).numFmt = "yyyy-mm-dd hh:mm:ss";
         x.getCell(7).numFmt = numFmt;
         x.getCell(7).font = { color: { argb: amount < 0 ? "FFE22134" : "FF1A7F37" } };
-        x.commit();
       }
-      // Wait for the client to drain before fetching more (backpressure).
-      if (out.writableNeedDrain) await new Promise((ok) => out.once("drain", ok));
     }
     if (capped) tx.addRow([fmt(t.ov.expCapped, { n: MAX_ROWS.toLocaleString(tag) })]).font = { italic: true };
-    tx.commit();
-    await wb.commit();
-  };
-  write().catch((e: unknown) => out.destroy(e instanceof Error ? e : new Error(String(e))));
-
-  return new Response(Readable.toWeb(out) as ReadableStream<Uint8Array>, {
-    headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(stamp)}.xlsx`,
-      "Cache-Control": "no-store",
-    },
-  });
+  const buf = await wb.xlsx.writeBuffer();
+  return { blob: new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name: `${stamp}.xlsx` };
 }

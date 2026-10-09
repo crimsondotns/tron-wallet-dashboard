@@ -1,3 +1,5 @@
+"use client";
+
 import { AppShell } from "@/components/AppShell";
 import { ChainIcon } from "@/components/ChainIcon";
 import { CopyText } from "@/components/CopyText";
@@ -6,23 +8,35 @@ import { ExplorerLink } from "@/components/ExplorerLink";
 import { SyncRunner } from "@/components/SyncRunner";
 import { WalletRowMenu } from "@/components/WalletRowMenu";
 import { fmt as tf } from "@/i18n/config";
-import { getT } from "@/i18n/server";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { useT } from "@/i18n/client";
+import type { Dict } from "@/i18n/dict";
+import { useAuth } from "@/components/AuthProvider";
+import { PageLoader } from "@/components/PageLoader";
 import { isAdminRole, myOrgs } from "@/lib/org";
 import { isSupportedChain } from "@/lib/sync/chains";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/client";
 import { addWallet } from "./actions";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 const short = (a: string) => (a.length > 16 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
 const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
-  const { t } = await getT();
+export default function Home() {
+  return <Suspense><View /></Suspense>;
+}
+
+function View() {
+  const error = useSearchParams().get("error") ?? undefined;
+  const t = useT();
+  const email = useAuth()?.email;
+  return <PageLoader build={() => build({ error, t, email })} deps={[error, t, email]} fallback={<AppShell active="wallets">{null}</AppShell>} />;
+}
+
+async function build({ error, t, email }: { error?: string; t: Dict; email?: string }) {
   const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate, chain: t.wallets.errChain, not_allowed: t.wallets.errNotAllowed };
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const email = claims?.claims.email as string | undefined;
+  const supabase = createClient();
   const since = daysAgo(30);
 
   const [memberships, { data: chains }, { data: wallets }, { data: cursors }, { data: flows }] = await Promise.all([

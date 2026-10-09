@@ -1,3 +1,5 @@
+import { asset } from "@/lib/base";
+
 // Official chain marks (web3icons "background" variant, MIT), served from /public/chains.
 const KNOWN = new Set(["tron", "ethereum", "bsc", "polygon", "arbitrum", "optimism", "base", "solana"]);
 
@@ -10,5 +12,5 @@ export function ChainIcon({ chain, size = 16 }: { chain: string; size?: number }
     );
   }
   // eslint-disable-next-line @next/next/no-img-element -- tiny static SVG; no optimisation needed
-  return <img className="chain-icon" src={`/chains/${chain}.svg`} width={size} height={size} alt="" aria-hidden="true" />;
+  return <img className="chain-icon" src={asset(`/chains/${chain}.svg`)} width={size} height={size} alt="" aria-hidden="true" />;
 }
