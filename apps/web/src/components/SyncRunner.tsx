@@ -86,7 +86,7 @@ export function SyncRunner({ wallets, email }: { wallets: SyncWallet[]; email: s
             current = name(w);
             log("run", fmt(t.sync.logWallet, { name: current }));
             setStatus({ text: fmt(t.sync.busy, { name: w.label || w.address.slice(0, 8) }), tone: "busy" });
-            await syncWallet(db, w, provider, { apiKey: conn.api_key, endpoint: conn.endpoint_url }, {
+            await syncWallet(db, w, provider, { apiKey: conn.api_key, endpoint: conn.endpoint_url, chain }, {
               deadline,
               onProgress: (p) => {
                 const k = `${p.wallet.id}:${p.kind}`;
@@ -99,7 +99,7 @@ export function SyncRunner({ wallets, email }: { wallets: SyncWallet[]; email: s
                 else log("run", fmt(t.sync.logPage, { name: current, kind: kindName(p.kind), pages: p.pages, added: p.added }));
               },
             });
-            const cfg = { apiKey: conn.api_key, endpoint: conn.endpoint_url };
+            const cfg = { apiKey: conn.api_key, endpoint: conn.endpoint_url, chain };
             try {
               const r = await labelCounterparties(db, w, provider, cfg, { deadline });
               if (r.checked) log("ok", fmt(t.sync.logLabels, { name: current, named: r.named, checked: r.checked }));

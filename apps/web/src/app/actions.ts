@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { adminOrgId } from "@/lib/org";
+import { normalizeAddress } from "@/lib/sync/address";
 import { isSupportedChain } from "@/lib/sync/chains";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,15 +15,15 @@ const logError = (where: string, error: { code?: string; message: string }) =>
 export async function addWallet(form: FormData) {
   const chain = String(form.get("chain_id") ?? "");
   if (!isSupportedChain(chain)) fail("chain");
-  let address = String(form.get("address") ?? "").trim();
-  if (chain !== "tron") address = address.toLowerCase();
+  const address = normalizeAddress(chain, String(form.get("address") ?? ""));
+  if (!address) fail("bad_address");
   const supabase = await createClient();
   const orgId = await adminOrgId(supabase, String(form.get("org_id") ?? ""));
   if (!orgId) fail("not_allowed");
   const { error } = await supabase.from("wallets").insert({
     org_id: orgId!,
     chain_id: chain,
-    address,
+    address: address!,
     label: String(form.get("label") ?? "").trim(),
   });
   if (error) {

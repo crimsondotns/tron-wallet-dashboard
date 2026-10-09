@@ -16,7 +16,8 @@ export type RawTransfer = {
 };
 
 // retries: how many times to retry network/429/5xx (sync uses the default; diagnostics use 0).
-export type ProviderConfig = { apiKey: string | null; endpoint: string | null; retries?: number };
+// chain: the chain id (e.g. "ethereum"), for providers that serve several chains.
+export type ProviderConfig = { apiKey: string | null; endpoint: string | null; retries?: number; chain?: string };
 
 // One newest-first page. `oldest` is the oldest timestamp the provider returned *before*
 // filtering (so paging keeps moving even if every item was filtered out); `exhausted` means
@@ -30,6 +31,8 @@ export interface ChainProvider {
   id: string;
   label: string;
   defaultEndpoint: string;
+  // Per-chain default for multi-chain providers (null: no free default, an endpoint is required).
+  defaultEndpointFor?(chain: string): string | null;
   kinds: SyncKind[];
   pageSize: number;
   // `before` = only items at or before this ms timestamp; `offset` pages within that timestamp.

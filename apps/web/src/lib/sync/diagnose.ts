@@ -1,6 +1,7 @@
 import { fmt, fmtDateTime, LOCALE_TAGS, type Locale } from "@/i18n/config";
 import type { Dict } from "@/i18n/dict";
 import { ProviderError, providerErrorText } from "./providers/http";
+import { isEvmChain, normalizeAddress } from "./address";
 import type { ChainProvider, ProviderConfig, RawTransfer } from "./types";
 
 export type StepStatus = "pending" | "running" | "pass" | "warn" | "fail" | "skip";
@@ -18,6 +19,9 @@ const STEP_IDS = ["config", "reach", "chain", "native", "token", "paging", "spee
 const STEP_TITLE = { config: "stepConfig", reach: "stepReach", chain: "stepChain", native: "stepNative", token: "stepToken", paging: "stepPaging", speed: "stepSpeed" } as const;
 export const stepDefs = (t: Dict) => STEP_IDS.map((id) => ({ id, title: t.diag[STEP_TITLE[id]] }));
 
+// Built-in providers: they send CORS headers and offer API keys for higher limits.
+const KNOWN = ["trongrid", "tronscan", "routescan", "blockscout", "etherscan"];
+
 // Plain-language fix for each error kind, shown under a failed step.
 function fixFor(e: unknown, provider: ChainProvider, t: Dict): string {
   const d = t.diag;
@@ -25,13 +29,13 @@ function fixFor(e: unknown, provider: ChainProvider, t: Dict): string {
   switch (e.kind) {
     case "cors":
       // Known providers send CORS headers; a CORS failure there is a 429 without them.
-      return provider.id === "trongrid" || provider.id === "tronscan" ? fmt(d.fixCorsKnown, { provider: provider.label }) : d.fixCors;
+      return KNOWN.includes(provider.id) ? fmt(d.fixCorsKnown, { provider: provider.label }) : d.fixCors;
     case "network":
       return d.fixNetwork;
     case "auth":
       return d.fixAuth;
     case "rate":
-      return provider.id === "trongrid" || provider.id === "tronscan" ? d.fixRateKey : d.fixRate;
+      return KNOWN.includes(provider.id) ? d.fixRateKey : d.fixRate;
     case "bad_response":
     case "http":
       return fmt(d.fixBadResponse, { provider: provider.label });
@@ -57,6 +61,7 @@ export async function diagnose(
   const d = t.diag;
   const date = (ms: number) => fmtDateTime(ms, locale, tz);
   const fast: ProviderConfig = { ...cfg, retries: 0 };
+  const CHAIN = (cfg.chain ?? "tron").toUpperCase();
   const r: Report = { steps: stepDefs(t).map((s) => ({ ...s, status: "pending" })), verdict: null, sample: [] };
   const emit = () => onUpdate({ ...r, steps: r.steps.map((s) => ({ ...s })) });
   const step = (id: string) => r.steps.find((s) => s.id === id)!;
@@ -83,11 +88,13 @@ export async function diagnose(
   };
 
   await run("config", async () => {
-    const url = cfg.endpoint || provider.defaultEndpoint;
+    const chain = cfg.chain ?? "tron";
+    const url = cfg.endpoint || provider.defaultEndpointFor?.(chain) || (provider.defaultEndpointFor ? "" : provider.defaultEndpoint);
+    if (!url) throw new Error(fmt(t.err.noEndpoint, { name: provider.label }));
     let u: URL;
     try { u = new URL(url); } catch { throw new Error(fmt(d.badUrl, { url })); }
     if (u.protocol !== "https:") throw new Error(d.httpsOnly);
-    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) throw new Error(d.badAddress);
+    if (!normalizeAddress(chain, address)) throw new Error(isEvmChain(chain) ? d.badAddressEvm : d.badAddress);
     if (!cfg.apiKey && !/[?/][A-Za-z0-9_-]{20,}/.test(u.pathname + u.search))
       return { status: "warn", detail: fmt(d.noKey, { host: u.host }), fix: d.noKeyFix };
     return { detail: u.host };
@@ -105,10 +112,10 @@ export async function diagnose(
 
   await run("chain", async () => {
     const lag = r.block!.lagSec;
-    if (!blockTs || r.block!.number < 1_000_000) throw new Error(d.notMainnet);
+    if (!blockTs || r.block!.number < 1_000_000) throw new Error(fmt(d.notMainnet, { chain: CHAIN }));
     if (lag > 600) return { status: "fail", detail: fmt(d.staleFail, { min: Math.round(lag / 60) }), fix: d.staleFailFix };
     if (lag > 60) return { status: "warn", detail: fmt(d.staleWarn, { sec: lag }), fix: d.staleWarnFix };
-    return { detail: fmt(d.chainOk, { sec: lag }) };
+    return { detail: fmt(d.chainOk, { sec: lag, chain: CHAIN }) };
   });
 
   let oldestNative: number | null = null;
