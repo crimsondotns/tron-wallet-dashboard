@@ -6,7 +6,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { LiquidityField } from "./LiquidityField";
 import { LogoHero } from "./LogoHero";
 
-export function AuthShell({ mode, children }: { mode: "login" | "register"; children: React.ReactNode }) {
+export function AuthShell({ mode, children }: { mode: "login" | "register" | "other"; children: React.ReactNode }) {
   const t = useT();
   return (
     <main className="auth">

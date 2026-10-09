@@ -7,7 +7,7 @@ import { onGo } from "@/lib/nav";
 
 type Auth = { uid: string; email: string } | null;
 const Ctx = createContext<Auth>(null);
-const PUBLIC_PATHS = ["/login", "/register", "/auth"];
+const PUBLIC_PATHS = ["/login", "/register", "/auth", "/forgot", "/reset"];
 
 // Replaces the old proxy.ts: the browser client keeps the session (and handles the ?code= of an
 // email confirmation link); signed-out visitors are sent to /login. Protected pages render only

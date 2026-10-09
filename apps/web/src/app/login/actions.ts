@@ -31,7 +31,7 @@ export async function signIn(form: FormData) {
 
 // Breached-password check against HIBP (k-anonymity: only the first 5 hex chars of the SHA-1
 // leave the browser). Runs client-side now, so it guides users but can be bypassed. Fails open.
-async function isPwned(password: string) {
+export async function isPwned(password: string) {
   try {
     const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(password));
     const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
@@ -74,4 +74,29 @@ export async function signUp(form: FormData) {
 export async function signOut() {
   await createClient().auth.signOut();
   go("/login/");
+}
+
+// Always reports "sent" so the form doesn't reveal which emails have accounts. The link (PKCE)
+// works only in this browser, like the sign-up confirmation link.
+export async function requestReset(form: FormData) {
+  const email = String(form.get("email") ?? "").trim();
+  const { error } = await createClient().auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}${asset("/reset/")}` });
+  if (error) console.error("[auth] resetPasswordForEmail failed:", error.code, error.message);
+  go("/forgot/?message=sent");
+}
+
+// Runs on /reset/ after the browser client exchanged the email link's code for a session.
+export async function setNewPassword(form: FormData) {
+  const password = String(form.get("password") ?? "");
+  if (password !== form.get("confirm")) return go("/reset/?error=mismatch");
+  if (password.length < 8) return go("/reset/?error=weak");
+  if (await isPwned(password)) return go("/reset/?error=pwned");
+  const { error } = await createClient().auth.updateUser({ password });
+  if (error) {
+    if (error.code === "same_password") return go("/reset/?error=same");
+    if (error.code === "weak_password") return go("/reset/?error=weak");
+    console.error("[auth] updateUser(password) failed:", error.code, error.message);
+    return go("/reset/?error=link");
+  }
+  go("/?message=password");
 }

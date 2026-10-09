@@ -28,13 +28,14 @@ export default function Home() {
 }
 
 function View() {
-  const error = useSearchParams().get("error") ?? undefined;
+  const sp = useSearchParams();
+  const error = sp.get("error") ?? undefined, message = sp.get("message") ?? undefined;
   const t = useT();
   const email = useAuth()?.email;
-  return <PageLoader build={() => build({ error, t, email })} deps={[error, t, email]} fallback={<AppShell active="wallets">{null}</AppShell>} />;
+  return <PageLoader build={() => build({ error, message, t, email })} deps={[error, message, t, email]} fallback={<AppShell active="wallets">{null}</AppShell>} />;
 }
 
-async function build({ error, t, email }: { error?: string; t: Dict; email?: string }) {
+async function build({ error, message, t, email }: { error?: string; message?: string; t: Dict; email?: string }) {
   const errors: Record<string, string> = { bad_address: t.wallets.errBadAddress, duplicate: t.wallets.errDuplicate, chain: t.wallets.errChain, not_allowed: t.wallets.errNotAllowed };
   const supabase = createClient();
   const since = daysAgo(30);
@@ -79,6 +80,7 @@ async function build({ error, t, email }: { error?: string; t: Dict; email?: str
       {!!syncable.length && <SyncRunner wallets={syncable} email={email ?? ""} />}
 
       {error && <p className="error" role="alert">{errors[error] ?? t.common.errGeneric}</p>}
+      {message === "password" && <p className="notice" role="status">{t.auth.passwordUpdated}</p>}
 
       {!org ? (
         <p className="error">{t.wallets.noOrg}</p>

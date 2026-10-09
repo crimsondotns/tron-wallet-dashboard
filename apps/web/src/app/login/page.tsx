@@ -39,6 +39,7 @@ function View() {
           <span>{t.auth.password}</span>
           <input className="input" name="password" type="password" required minLength={6} autoComplete="current-password" placeholder={t.auth.passwordPh} />
         </label>
+        <Link className="link small auth-forgot" href="/forgot/">{t.auth.forgot}</Link>
         <button className="btn-primary">{t.auth.signIn}</button>
       </form>
     </AuthShell>

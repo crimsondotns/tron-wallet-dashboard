@@ -153,6 +153,7 @@ a { text-decoration: none; }
 }
 .auth-tabs a:hover { color: var(--text-base); }
 .auth-tabs a[aria-current="page"] { background: var(--background-card); color: var(--text-base); }
+.auth-forgot { align-self: flex-end; margin-top: -8px; }
 
 .field { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 700; }
 .auth-form .btn-primary { width: 100%; }
