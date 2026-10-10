@@ -6,6 +6,7 @@ import { PAGE_SIZES } from "@/components/pageSizes";
 import { AppShell } from "@/components/AppShell";
 import { CopyText } from "@/components/CopyText";
 import { TokenIcon } from "@/components/TokenIcon";
+import { ChainIcon } from "@/components/ChainIcon";
 import { ExplorerLink } from "@/components/ExplorerLink";
 import { DailyBars, type Bucket } from "@/components/overview/DailyBars";
 import { AmountFilter } from "@/components/overview/AmountFilter";
@@ -154,6 +155,7 @@ async function build(sp: Params, { t, locale, tz, email }: { t: Dict; locale: Lo
   ];
   const labels = new Map((labelRows ?? []).map((l) => [l.address, l]));
   const chainOf = (id: string) => wallets.find((w) => w.id === id)?.chain_id ?? "tron";
+  const walletChain = (id: string) => wallets.find((x) => x.id === id)?.chain_id;
   const walletName = (id: string) => { const w = wallets.find((x) => x.id === id); return w ? w.label || short(w.address) : "—"; };
   const typeLabel = (type: string) => (t.ov as Record<string, string>)[`type${type}`] ?? type;
   const Counterparty = ({ address, chain }: { address: string; chain: string }) => {
@@ -250,7 +252,7 @@ async function build(sp: Params, { t, locale, tz, email }: { t: Dict; locale: Lo
         {rows.map((r) => (
           <tr key={r.id}>
             <td className="subdued nowrap">{fmtDateTime(r.ts, locale, tz)}</td>
-            <td>{walletName(r.wallet_id)}</td>
+            <td><span className="chain">{walletName(r.wallet_id)}{walletChain(r.wallet_id) && <ChainIcon chain={walletChain(r.wallet_id)!} />}</span></td>
             <td><Counterparty address={r.dir === "IN" ? r.from_addr : r.to_addr} chain={chainOf(r.wallet_id)} /></td>
             <td className={`num nowrap ${r.dir === "IN" ? "" : "subdued"}`}><span className="amount">{r.dir === "IN" ? "+" : "−"}{num(r.amount)} <TokenIcon symbol={r.token_symbol} chain={chainOf(r.wallet_id)} size={16} /> {r.token_symbol}</span></td>
             <td><span className="addr-cell"><CopyText text={r.tx_hash} display={short(r.tx_hash)} /><ExplorerLink chain={chainOf(r.wallet_id)} kind="tx" value={r.tx_hash} label={t.common.viewOn} /></span></td>
