@@ -212,7 +212,7 @@ a { text-decoration: none; }
   box-shadow: rgba(0, 0, 0, 0.5) 0px 8px 24px 0px;
   animation: dropdown-in 0.15s ease-out;
 }
-.dropdown-list { margin: 0; padding: 0; list-style: none; max-height: min(304px, calc(var(--pop-max, 320px) - 16px)); overflow-y: auto; }
+.dropdown-list { margin: 0; padding: 0; list-style: none; max-height: min(240px, calc(var(--pop-max, 320px) - 16px)); overflow-y: auto; }
 @keyframes dropdown-in { from { opacity: 0; transform: translateY(-8px); } }
 @media (prefers-reduced-motion: reduce) { .dropdown-pop { animation: none; } }
 .dropdown-list:focus { outline: none; }
