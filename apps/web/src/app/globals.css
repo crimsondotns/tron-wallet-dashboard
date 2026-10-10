@@ -642,7 +642,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .sync-panel-status { min-width: 0; }
 .sync-panel-status .sync-status { margin: 0; }
 /* Log toggle: icon-only pill, no fill (tooltip carries the label). */
-/* Console card: floating, bottom right on every page (popover surface: 16px radius + shadow). */
+/* Console card: floating, bottom right on every page (square corners + popover shadow). */
 .console-fab {
   position: fixed; right: 24px; bottom: 24px; z-index: 5;
   display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 16px;
@@ -654,14 +654,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 .console-card {
   position: fixed; right: 24px; bottom: 24px; z-index: 5; width: min(480px, calc(100vw - 48px));
   display: flex; flex-direction: column; background: var(--background-highlight);
-  border-radius: var(--radius-popover); box-shadow: var(--shadow-popover); overflow: hidden;
+  border-radius: 0; box-shadow: var(--shadow-popover); overflow: hidden;
   animation: console-in 0.15s ease-out;
 }
 .console-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 16px; }
 .console-card-title { display: inline-flex; align-items: center; gap: 8px; font: 700 14px/1 var(--font-ui); color: var(--text-base); }
 .console-card-actions { display: inline-flex; align-items: center; gap: 8px; }
 .console-card-body { border-radius: 0; max-height: min(320px, 50vh); overflow-y: auto; }
-.console-card-body .console-line { white-space: pre-wrap; word-break: break-word; }
+.console-card-body .console-body { overflow-x: visible; }
+.console-card-body .console-line { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @keyframes console-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .console-card { animation: none; } }
 @media (max-width: 991px) {

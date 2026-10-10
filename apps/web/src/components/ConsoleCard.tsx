@@ -79,7 +79,9 @@ export function ConsoleCard() {
       <header className="console-card-head">
         <span className="console-card-title">{icon}{t.console.title}</span>
         <span className="console-card-actions">
-          <button type="button" className="btn-ghost btn-sm" onClick={copy}>{t.common.copy}</button>
+          <button type="button" className="icon-btn" onClick={copy} aria-label={t.common.copy} title={t.common.copy}>
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 5.5V4a1.5 1.5 0 00-1.5-1.5H4A1.5 1.5 0 002.5 4v5A1.5 1.5 0 004 10.5h1.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+          </button>
           <button type="button" className="btn-ghost btn-sm" onClick={clearLog}>{t.sync.logClear}</button>
           <button type="button" className="icon-btn" onClick={close} aria-label={t.console.hide}>
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
