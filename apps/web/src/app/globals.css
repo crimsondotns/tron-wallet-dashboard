@@ -642,12 +642,13 @@ button:disabled { opacity: 0.5; cursor: default; }
 .sync-panel-status { min-width: 0; }
 .sync-panel-status .sync-status { margin: 0; }
 /* Log toggle: icon-only pill, no fill (tooltip carries the label). */
+/* Console tab: flush to the bottom-right screen corner, no shadow. */
 /* Console card: floating, bottom right on every page (square corners + popover shadow). */
 .console-fab {
-  position: fixed; right: 24px; bottom: 24px; z-index: 5;
+  position: fixed; right: 0; bottom: 0; z-index: 5;
   display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 16px;
-  border: 0; border-radius: var(--radius-pill); background: var(--background-card); color: var(--text-subdued);
-  font: 700 14px/1 var(--font-ui); box-shadow: var(--shadow-popover); transition: color 0.2s ease, background-color 0.2s ease;
+  border: 0; border-radius: 0; background: var(--background-card); color: var(--text-subdued);
+  font: 700 14px/1 var(--font-ui); transition: color 0.2s ease, background-color 0.2s ease;
 }
 .console-fab:hover { color: var(--text-base); background: var(--border-subtle); }
 .console-fab-dot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--danger); }
@@ -666,7 +667,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 @keyframes console-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .console-card { animation: none; } }
 @media (max-width: 991px) {
-  .console-fab { right: 16px; bottom: 16px; }
   .console-card { right: 16px; bottom: 16px; width: calc(100vw - 32px); }
 }
 
