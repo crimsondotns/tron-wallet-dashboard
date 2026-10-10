@@ -11,7 +11,7 @@ import { RANGES, type Range } from "./ranges";
 // Wallet / token / range filters. State lives in the URL so views are shareable and the
 // server renders the result (no client fetching).
 export function OverviewFilters({ wallets, wallet, tokens, token, range, chain }: {
-  wallets: { id: string; label: string }[]; wallet: string; tokens: string[]; token: string; range: Range; chain: string;
+  wallets: { id: string; label: string; chain: string }[]; wallet: string; tokens: string[]; token: string; range: Range; chain: string;
 }) {
   const t = useT();
   const router = useRouter();
@@ -31,7 +31,7 @@ export function OverviewFilters({ wallets, wallet, tokens, token, range, chain }
   return (
     <div className="ov-filters">
       <Dropdown key={`w-${wallet}`} name="wallet" label={t.common.wallet} defaultValue={wallet}
-        options={wallets.map((w) => ({ value: w.id, label: w.label }))}
+        options={wallets.map((w) => ({ value: w.id, label: w.label, icon: w.chain }))}
         onChange={(v) => router.push(href({ wallet: v }))} />
       {tokens.length > 0 && (
         <Dropdown key={`t-${token}`} name="token" label={t.ov.token} defaultValue={token}

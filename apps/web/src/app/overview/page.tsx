@@ -284,7 +284,7 @@ async function build(sp: Params, { t, locale, tz, email }: { t: Dict; locale: Lo
           {/* Only the selected wallet: opening Overview must not start a sync of every wallet. */}
           {canAdmin && <SyncRunner key={wallet} wallets={selected} email={email ?? ""} />}
           <div className="ov-bar">
-            <OverviewFilters wallets={wallets.map((w) => ({ id: w.id, label: w.label || short(w.address) }))}
+            <OverviewFilters wallets={wallets.map((w) => ({ id: w.id, label: w.label || short(w.address), chain: w.chain_id }))}
               wallet={wallet} tokens={s?.tokens ?? []} token={token} range={range} chain={selected[0]?.chain_id ?? "tron"} />
             <div className="ov-actions">
               {canAdmin && <SyncNowButton walletId={wallet} />}
